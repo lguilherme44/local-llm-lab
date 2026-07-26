@@ -42,6 +42,8 @@ Servidor que não responde nem sempre está travado. Neste repositório document
 
 ## O que tem aqui
 
+### Scripts
+
 ```
 macos/
   llm-server.command      servidor MLX (API OpenAI) + gestão de modelos
@@ -52,15 +54,22 @@ windows/
   llm-clients-setup.ps1   configura pi e Continue
 scripts/
   test-tools.py           valida se um modelo faz tool calling de verdade
-docs/
-  01-conceitos.md         quantização, KV cache, memória unificada vs VRAM
-  02-escolher-modelo.md   como decidir, com a matemática
-  03-tool-calling.md      metodologia e resultados
-  04-clientes.md          pi, Continue, Cline
-  05-manutencao.md        baixar, remover, tunar, liberar espaço
-  06-troubleshooting.md   os erros reais e o que cada um significava
-  benchmarks.md           todos os números e como foram obtidos
+  check-links.py          confere links e âncoras desta documentação
 ```
+
+### Documentação
+
+| documento | sobre |
+|---|---|
+| [1. Conceitos](docs/01-conceitos.md) | quantização, cache KV, memória unificada vs VRAM, prefill vs geração |
+| [2. Escolher o modelo](docs/02-escolher-modelo.md) | a ordem correta das perguntas, com a matemática |
+| [3. Tool calling](docs/03-tool-calling.md) | metodologia, resultados e os dois modos de falha |
+| [4. Clientes](docs/04-clientes.md) | pi, Continue, Cline — e as armadilhas de cada um |
+| [5. Manutenção](docs/05-manutencao.md) | baixar, remover, tunar, liberar espaço |
+| [6. Troubleshooting](docs/06-troubleshooting.md) | sintoma → diagnóstico errado → causa real |
+| [Benchmarks](docs/benchmarks.md) | todos os números e como foram obtidos |
+
+Se você só quer que funcione, leia [Escolher o modelo](docs/02-escolher-modelo.md). Se algo já quebrou, vá direto ao [Troubleshooting](docs/06-troubleshooting.md).
 
 ---
 

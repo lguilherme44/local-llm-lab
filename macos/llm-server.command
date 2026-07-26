@@ -431,6 +431,10 @@ cmd_start() {
 
   # read -ra divide por espaço SEM expansão de brace/glob — necessário porque as
   # flags extras carregam JSON literal ({"enable_thinking":false}).
+  #
+  # ATENÇÃO ao expandir isto adiante: o macOS traz bash 3.2, onde "${arr[@]}" de
+  # um array VAZIO dispara "unbound variable" sob set -u. A forma segura é
+  # "${arr[@]+"${arr[@]}"}" — sem ela, todo perfil sem flags extras quebra.
   local -a extra_args=()
   [[ -n "$extra" ]] && read -ra extra_args <<< "$extra"
 
@@ -465,7 +469,7 @@ cmd_start() {
       --max-kv-size 8192 \
       --prefill-step-size 1024 \
       --log-level WARNING \
-      "${extra_args[@]}" \
+      "${extra_args[@]+"${extra_args[@]}"}" \
       >"$LOG_FILE" 2>&1 &
   else
     #  --temp 0.0            determinístico: o que se quer em código
@@ -481,7 +485,7 @@ cmd_start() {
       --prompt-cache-size 2 \
       --prompt-cache-bytes 1500000000 \
       --log-level WARNING \
-      "${extra_args[@]}" \
+      "${extra_args[@]+"${extra_args[@]}"}" \
       >"$LOG_FILE" 2>&1 &
   fi
 

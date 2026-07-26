@@ -127,8 +127,8 @@ O passo 4 é o que separa "emite chamada" de "serve como agente". Modelo que ped
 | Qwen3-8B-4bit | MLX | ✅ turno 1: 3,0 s · turno 2: 4,5 s · 16,1 tok/s |
 | Qwen3-8B-GGUF Q4_K_M | llama.cpp | ✅ turno 1: 9,1 s · turno 2: 15,9 s · 18,8 tok/s |
 | Qwen3-4B-GGUF Q4_K_M | llama.cpp | ✅ turno 1: 4,5 s · turno 2: 12,1 s · 33,1 tok/s |
-| Qwen2.5-Coder-7B-4bit | mlx_lm | ❌ emitiu `<tools>` em vez de `<tool_call>` |
-| Qwen2.5-Coder-7B-4bit | mlx_vlm | ❌ idem (confirma que é o modelo) |
+| Qwen2.5-Coder-7B-4bit | mlx_lm | ❌ chamada como texto no `content` (formato variável) |
+| Qwen2.5-Coder-7B-4bit | mlx_vlm | ❌ idem (confirma que é o modelo, não o servidor) |
 | Qwen3-4B-Instruct-2507-4bit | MLX | ❌ `content` vazio (template separado) |
 
 O `Qwen2.5-Coder` foi testado nos **dois** engines de propósito: com o mesmo resultado, a causa está no modelo, não no servidor.

@@ -38,16 +38,28 @@ O que **parece** garantir suporte:
 
 Tivemos os três — e o `tool_calls` voltou `null`.
 
-**A causa:** o modelo emitiu a tag **errada**.
+**A causa:** o modelo devolve a chamada como **texto**, não no campo estruturado.
+
+E a forma varia entre execuções. Duas observadas no mesmo modelo:
 
 ```
-esperado:  <tool_call>{"name": "bash", "arguments": {...}}</tool_call>
-emitido:   <tools>{"name": "bash", "arguments": {...}}</tools>
+# com uma ferramenta 'bash' — usou a tag de DECLARAÇÃO
+emitido:   <tools>{"name": "bash", "arguments": {"cmd": "ls"}}</tools>
+esperado:  <tool_call>{"name": "bash", ...}</tool_call>
+
+# com uma ferramenta 'read_file' — usou bloco markdown
+emitido:   ```json
+           {"name": "read_file", "arguments": {"path": "config.json"}}
+           ```
 ```
 
-`<tools>` é a tag que **declara** quais ferramentas existem — parte do prompt, não da resposta. `<tool_call>` é a que **faz** a chamada. O modelo confundiu as duas, o parser do servidor não reconheceu, e a "chamada" chegou como texto solto no campo `content`.
+No primeiro caso confundiu `<tools>` (que **declara** quais ferramentas existem, parte do prompt) com `<tool_call>` (que **faz** a chamada). No segundo, ignorou o protocolo e respondeu em markdown.
 
-Isso aconteceu com o `Qwen2.5-Coder-7B` **e** com o `14B`. O fine-tune que os tornou melhores em escrever código degradou o tool calling.
+Nos dois, o parser do servidor não reconheceu e o `tool_calls` voltou `null`. O modelo *entendeu* a tarefa — montou nome e argumentos corretos — e falhou no formato.
+
+Isso aconteceu com o `Qwen2.5-Coder-7B` **e** com o `14B`. O fine-tune que os tornou melhores em escrever código degradou a aderência ao protocolo de ferramentas.
+
+**Implicação prática:** não basta procurar uma tag específica no `content` para "consertar" isso do lado do cliente. A saída é inconsistente. Troque de modelo.
 
 **Consequência metodológica:** não existe substituto para executar o teste.
 

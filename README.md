@@ -1,5 +1,10 @@
 # local-llm-lab
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey.svg?style=flat-square)](#instalação)
+[![Runtime](https://img.shields.io/badge/runtime-MLX%20%7C%20llama.cpp-blue.svg?style=flat-square)](#instalação)
+[![Benchmarks](https://img.shields.io/badge/benchmarks-medidos%20na%20máquina-success.svg?style=flat-square)](docs/benchmarks.md)
+
 Rodar LLM local em **Apple Silicon** e **NVIDIA**, com scripts que funcionam e — mais importante — com os **números medidos** em cada máquina.
 
 Não é uma coleção de comandos copiados de tutorial. Cada tok/s aqui saiu de um teste executado, cada armadilha documentada custou uma sessão de depuração, e o que **não** funcionou está registrado com o mesmo cuidado do que funcionou.
@@ -96,6 +101,96 @@ Também medido nessa máquina: **prefill a ~176 tok/s** (3.517 tokens de prompt 
 O 4B roda ao **dobro** da velocidade do 8B e faz tool calling igualmente bem. Em hardware limitado, esse é o trade-off que importa — e é o oposto do reflexo "maior é melhor".
 
 Metodologia completa em [`docs/benchmarks.md`](docs/benchmarks.md).
+
+---
+
+## Saídas reais
+
+Nada aqui foi escrito à mão. Todas as saídas abaixo vieram de comandos executados numa sessão, no MacBook Air M4 com apps abertos.
+
+### Estado dos modelos
+
+```console
+$ ./macos/llm-server.command models
+
+Perfis
+PERFIL    EM DISCO ENGINE TOOLS  ESTADO      MODELO
+agent     4.3 GB   lm     sim    EM USO      mlx-community/Qwen3-8B-4bit
+fast      4.0 GB   lm     nao    baixado     mlx-community/Qwen2.5-Coder-7B-Instruct-4bit
+balanced  7.7 GB   lm     nao    baixado     mlx-community/Qwen2.5-Coder-14B-Instruct-4bit
+quality   8.4 GB   vlm    ?      baixado     mlx-community/gemma-4-12B-it-qat-OptiQ-4bit
+tiny      -        lm     ?      ausente     mlx-community/mini-coder-4b-OptiQ-4bit
+
+Disco
+  modelos em cache: 24.5 GB · livre no disco: 37 GB
+
+Padrão: agent · RAM livre: 3.1 GB
+TOOLS=sim -> serve como agente (pi, Cline). TOOLS=nao -> só chat/edit.
+```
+
+A coluna **TOOLS** é a que decide o uso, e **EM DISCO** é medido de verdade, não declarado.
+
+### Tool calling: o ciclo completo
+
+```console
+$ python3 scripts/test-tools.py mlx-community/Qwen3-8B-4bit 8080
+
+=== mlx-community/Qwen3-8B-4bit (porta 8080) ===
+
+[turno 1 · 3.2s]
+  ✓ tool_calls ESTRUTURADO
+    -> read_file({"path": "config.json"})
+       id=3c6f51cd-d4ae-4f85-b0e8-1a27d442b7d1
+
+[turno 2 · 4.4s]
+  resposta: O conteúdo do arquivo `config.json` é o seguinte:
+  {"name": "meu-projeto", "version": "3.1.4", "license": "MIT"}
+
+  ✓ usou o resultado da ferramenta na resposta
+  geração: 16.5 tok/s
+
+APROVADO — serve como agente
+```
+
+O turno 2 é o que separa "emite chamada" de "serve como agente": o script devolve um resultado fabricado e verifica se a resposta final **cita aqueles valores**. Modelo que pede a ferramenta e ignora o retorno é reprovado.
+
+O mesmo teste com um modelo especializado em código:
+
+```console
+$ python3 scripts/test-tools.py mlx-community/Qwen2.5-Coder-7B-Instruct-4bit 8080
+
+=== mlx-community/Qwen2.5-Coder-7B-Instruct-4bit (porta 8080) ===
+
+[turno 1 · 2.5s]
+  ✗ tool_calls: null  (agente NÃO funciona)
+    content: '```json\n{\n  "name": "read_file",\n  "arguments": {\n    "path": "config.json"\n  }\n}\n```<|im_end|>\n'
+```
+
+Ele **entendeu** a tarefa e montou os argumentos corretos — mas devolveu como **texto** no `content`, num bloco markdown, em vez de no campo `tool_calls`. Um agente não tem o que executar com isso.
+
+A forma do erro varia: neste teste veio um bloco ```json; num teste com uma ferramenta `bash` o mesmo modelo emitiu `<tools>{...}</tools>` — a tag que **declara** ferramentas, onde o parser espera `<tool_call>`, que as **chama**. O que não varia é o resultado: `tool_calls: null`.
+
+Detalhes e os dois modos de falha em [tool calling](docs/03-tool-calling.md).
+
+### Prompt cache: o ganho que viabiliza agentes
+
+```console
+1a requisicao (prefill completo)   3521 tokens de prompt em  22.84s  ->   154.1 tok/s
+2a requisicao (prompt cache)       3521 tokens de prompt em   1.02s  ->  3456.5 tok/s
+```
+
+**22× mais rápido** no prefixo repetido. Um agente reenvia system prompt e definições de ferramentas a cada turno; sem esse cache, você paga 23 segundos antes de cada resposta.
+
+### Uma pergunta comum
+
+```console
+$ ./macos/llm-server.command ask "Em uma frase: o que faz um mutex?"
+
+Um mutex garante que apenas um thread acesse um recurso ou bloco de código
+por vez, evitando conflitos e condições de corrida.
+
+[2.2s · 15.5 tok/s]
+```
 
 ---
 

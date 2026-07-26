@@ -205,6 +205,23 @@ Duas que morderam mais de uma vez:
 
 **`$args` é reservada no PowerShell.** Atribuir a ela dentro de uma função gera comportamento confuso. Use outro nome.
 
+**Array vazio + `set -u` quebra no bash 3.2 — que é o bash do macOS.** A Apple não atualiza o bash desde a mudança para GPLv3, então `/bin/bash` ainda é 3.2.57. Ali, expandir um array **vazio** sob `set -u` aborta:
+
+```bash
+$ /bin/bash -c 'set -u; a=(); printf "%s\n" "${a[@]}"'
+/bin/bash: a[@]: unbound variable
+```
+
+A forma segura, que funciona nas duas versões:
+
+```bash
+"${a[@]+"${a[@]}"}"
+```
+
+Este bug esteve no `llm-server.command`: os perfis com flags extras (`agent`, `quality`) subiam, e os com o campo vazio (`fast`, `balanced`, `tiny`) morriam com `unbound variable`. Passou pelos testes porque só o caminho *com* dados foi exercitado depois da mudança.
+
+**A lição maior:** ao adicionar um campo opcional, teste o caso vazio. Ele é o padrão para a maioria das entradas.
+
 **`read` sem TTY recebe EOF na hora.** Um script com confirmação interativa cancela sozinho quando rodado por pipe ou por um agente. Detecte com `[[ ! -t 0 ]]` e ofereça uma flag `--yes`.
 
 ---

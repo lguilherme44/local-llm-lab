@@ -1,0 +1,26 @@
+# Estado de execução dos scripts
+*.log
+*.log.err
+*.pid
+current-profile
+
+# Backups gerados pelo llm-clients-setup.ps1
+*.bak-*
+
+# Pesos de modelo: nunca versionar (vários GB e vêm do Hugging Face)
+*.gguf
+*.safetensors
+
+# Saídas de teste
+scratch/
+agent-test/
+resp.json
+
+# macOS
+.DS_Store
+.AppleDouble
+
+# Editores
+.vscode/
+.idea/
+*.swp

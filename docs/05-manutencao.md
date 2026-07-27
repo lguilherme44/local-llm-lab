@@ -232,9 +232,14 @@ O mesmo disco, medido em duas topologias:
 | escrita (`dd` 1 GB) | 39 MB/s | **207 MB/s** |
 | leitura (`dd` 1 GB) | 40 MB/s | **849 MB/s** |
 | arquivar 2,8 GB | ~100 s | **23,5 s** |
-| subir modelo de 2,8 GB | — | **2 s** |
+| arquivar 7,7 GB | — | **87 s** (~90 MB/s) |
+| subir modelo de 7,7 GB (cache frio) | — | **22 s** (~350 MB/s) |
 
 **21× na leitura só mudando onde o cabo está ligado.** O disco é o mesmo.
+
+Sobre a medição de subida: um `start` logo depois de escrever o arquivo aparenta 2 s, mas isso é o cache de página do macOS. Para medir de verdade, suba **outro** modelo antes, para desalojar o cache. Com cache frio, a regra que se sustentou foi **~3 s por GB** do externo, contra ~1,5 s/GB do interno.
+
+Note que a carga efetiva (350 MB/s) fica bem abaixo do `dd` sequencial (849 MB/s) — ler pesos não é acesso linear. Ao estimar, use metade do número do `dd`.
 
 Meça o seu:
 

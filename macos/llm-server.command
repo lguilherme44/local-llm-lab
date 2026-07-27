@@ -130,18 +130,19 @@ location_of() {
   printf ''
 }
 
-# O que passar em --model. Para o cache interno basta o repo id (o próprio HF
-# resolve). Para o externo é preciso o caminho do snapshot, porque o servidor não
-# conhece esse cache.
-resolve_model_arg() {
+# Para usar um modelo que vive no disco externo, aponte HF_HOME para o cache de
+# lá e passe o repo id normalmente.
+#
+# NÃO passe o caminho do snapshot em --model: os SERVIDORES (mlx_lm.server e
+# mlx_vlm.server) re-registram o modelo no cache padrão quando recebem um path,
+# copiando os pesos de volta para o disco interno — some o ganho todo. Medido:
+# 2,8 GB reapareceram no interno após um único start. (mlx_lm.generate e
+# mlx_vlm.generate não fazem isso; é específico dos servers.)
+hf_home_for() {
   local repo="$1"
-  if is_downloaded "$repo"; then printf '%s' "$repo"; return 0; fi
-  if is_downloaded_ext "$repo"; then
-    local snap
-    snap="$(find "$(ext_dir_of "$repo")/snapshots" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -1)"
-    [[ -n "$snap" ]] && { printf '%s' "$snap"; return 0; }
+  if ! is_downloaded "$repo" && is_downloaded_ext "$repo"; then
+    printf '%s' "$EXT_ROOT/hf"
   fi
-  return 1
 }
 
 free_ram_gb() {
@@ -644,8 +645,7 @@ cmd_start() {
     cmd_pull "$profile" || exit 1
   fi
 
-  local model_arg
-  model_arg="$(resolve_model_arg "$repo")" || die "Não localizei os pesos de '$repo'."
+  local hf_home; hf_home="$(hf_home_for "$repo")"
 
   local avail; avail="$(free_ram_gb)"
   if awk -v w="$size" -v a="$avail" 'BEGIN{exit !(a < w + 1.5)}'; then
@@ -653,13 +653,9 @@ cmd_start() {
     warn "Feche apps, ou use um perfil menor: $(basename "$0") start tiny"
   fi
 
-  if [[ "$model_arg" != "$repo" ]]; then
-    # Ler de disco externo lento domina o tempo de carga — e por muito. Medido
-    # num case USB 2.0 (~40 MB/s): 8,4 GB levaram 409 s para subir, contra ~6 s
-    # do SSD interno. Avisa para não confundir barramento lento com modelo lento.
-    warn "Carregando do disco EXTERNO — bem mais lento que do interno."
-    say  "${DIM}Referência medida em USB 2.0: ~8 GB levaram ~7 min. Em USB 3+, ~30 s.${R}"
-    say  "${DIM}Para uso frequente: $(basename "$0") restore $profile${R}"
+  if [[ -n "$hf_home" ]]; then
+    warn "Lendo do disco EXTERNO — a subida é mais lenta que do interno."
+    say  "${DIM}Para uso frequente, traga de volta: $(basename "$0") restore $profile${R}"
   fi
 
   head_ "Subindo $profile em http://$HOST:$PORT"
@@ -670,8 +666,8 @@ cmd_start() {
   if [[ "$engine" == "vlm" ]]; then
     #  --max-kv-size 8192  teto do cache KV, evita crescer até engolir a RAM
     #  --prefill-step-size reduz o pico de memória ao processar o prompt
-    nohup "$(engine_bin vlm server)" \
-      --model "$model_arg" \
+    nohup env ${hf_home:+HF_HOME="$hf_home"} "$(engine_bin vlm server)" \
+      --model "$repo" \
       --host "$HOST" --port "$PORT" \
       --max-tokens 4096 \
       --max-kv-size 8192 \
@@ -684,8 +680,8 @@ cmd_start() {
     #  --prompt-cache-*      reaproveita o prefixo entre pedidos, com teto de 1.5 GB.
     #                        Medido: prompt repetido de 3.5k tokens cai de 20s para
     #                        0.8s. É o que torna agente local viável.
-    nohup "$(engine_bin lm server)" \
-      --model "$model_arg" \
+    nohup env ${hf_home:+HF_HOME="$hf_home"} "$(engine_bin lm server)" \
+      --model "$repo" \
       --host "$HOST" --port "$PORT" \
       --temp 0.0 \
       --max-tokens 4096 \

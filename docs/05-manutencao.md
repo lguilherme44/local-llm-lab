@@ -201,40 +201,58 @@ Disco
   disco externo: /Volumes/240GB/llm-models (livre 212 GB)
 ```
 
-### A velocidade do barramento decide se isso serve
+### HF_HOME, não caminho de arquivo
 
-Medido com um case **USB 2.0** (~40 MB/s sequencial):
+Este é o detalhe que faz a diferença entre funcionar e não funcionar.
 
-| operação | tempo |
-|---|---|
-| arquivar 8,4 GB | 4 min 52 s |
-| **subir o servidor lendo do externo** | **409 s (6 min 49 s)** |
-| subir o mesmo modelo do interno | ~6 s |
-
-**68× mais lento para carregar.** Note que o carregamento (20 MB/s efetivos) é pior que o `dd` sequencial (40 MB/s), porque ler pesos envolve acesso não-sequencial.
-
-Conclusão prática:
-
-- **USB 2.0 (~40 MB/s):** externo só para **arquivo morto** — modelos que você quase nunca sobe, dumps, backups. Modelos de trabalho ficam no interno.
-- **USB 3.0+ (~400 MB/s):** aí sim vale manter modelos grandes lá; a carga cai para ~30 s.
-
-Antes de planejar, meça o seu:
+Para usar um modelo que vive no externo, aponte **`HF_HOME`** para o cache de lá e passe o **repo id** normalmente:
 
 ```bash
-cd /Volumes/SEU_DISCO
-dd if=/dev/zero of=.t bs=1m count=1024   # escrita
-sync; sudo purge
-dd if=.t of=/dev/null bs=1m              # leitura
-rm .t
+HF_HOME=/Volumes/SEU_DISCO/llm-models/hf \
+  mlx_lm.server --model mlx-community/Qwen3-8B-4bit
 ```
 
-E confira se o disco não está atrás de um hub lento — foi o caso aqui:
+**Não** passe o caminho do snapshot em `--model`. Os **servidores** (`mlx_lm.server` e `mlx_vlm.server`) re-registram o modelo no cache padrão quando recebem um path, **copiando os pesos de volta para o disco interno** — e todo o ganho evapora. Medido: 2,8 GB reapareceram no interno após um único `start`.
+
+Curiosamente, `mlx_lm.generate` e `mlx_vlm.generate` **não** fazem isso. É específico dos servers, o que torna a armadilha fácil de não perceber em teste rápido.
+
+Medido com o mesmo modelo de 2,8 GB no externo:
+
+| abordagem | tempo de subida | duplicou? |
+|---|---|---|
+| `--model <path do snapshot>` | 68 s | **sim, 2,8 GB** |
+| `HF_HOME=<externo>` + repo id | **2 s** | não |
+
+### A velocidade do barramento decide o resto
+
+O mesmo disco, medido em duas topologias:
+
+| | atrás de hub USB 2.0 | ligado direto (USB 3.2 Gen 2) |
+|---|---|---|
+| escrita (`dd` 1 GB) | 39 MB/s | **207 MB/s** |
+| leitura (`dd` 1 GB) | 40 MB/s | **849 MB/s** |
+| arquivar 2,8 GB | ~100 s | **23,5 s** |
+| subir modelo de 2,8 GB | — | **2 s** |
+
+**21× na leitura só mudando onde o cabo está ligado.** O disco é o mesmo.
+
+Meça o seu:
 
 ```bash
-ioreg -p IOUSB -w0 | rg -i "hub|product name"
+./macos/llm-server.command extbench
 ```
 
-Um SSD rápido ligado a um hub USB 2.0 entrega 40 MB/s. A topologia importa mais que o disco.
+Ele estima o tempo de carga e dá o veredito. Para leitura confiável, rode `sudo -v` antes — sem limpar o cache de página, o `dd` mede a RAM e devolve números impossíveis (20+ GB/s). O comando detecta isso e avisa.
+
+**Se a velocidade decepcionar, suspeite da topologia antes do disco:**
+
+```bash
+ioreg -p IOUSB -w0 -l | rg -o '"(USB Product Name|Device Speed)" = .*'
+```
+
+`Device Speed`: `2` = USB 2.0 (480 Mb/s), `3` = USB 3.0 (5 Gb/s), `4` = USB 3.2 Gen 2 (10 Gb/s).
+
+Um hub USB 3.0 se apresenta como **dois** controladores — um lado 2.0 e um lado SuperSpeed — porque USB 3 usa pares de fios separados. Se o seu SSD aparecer sob o lado 2.0, os pares SuperSpeed não foram conectados: cabo sem os fios, porta 2.0 do hub, ou case antigo. **Ligar direto na máquina elimina duas dessas três variáveis de uma vez.**
 
 ### Seguro para desconectar
 

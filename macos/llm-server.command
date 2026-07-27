@@ -35,6 +35,34 @@ PROFILE_FILE="$RUN_DIR/current-profile"
 BIN_DIR="$HOME/.local/bin"
 HF_CACHE="$HOME/.cache/huggingface/hub"
 
+# ─── biblioteca externa (SSD removível) ─────────────────────────────────────────
+# Modelos podem morar num disco externo para poupar o SSD interno. Regra de ouro:
+# NADA que o sistema precise para funcionar vai para o externo — só pesos de
+# modelo. Assim, desconectar o disco no meio do dia não quebra nada: no pior caso
+# um perfil fica indisponível, com mensagem clara e sugestão do que usar.
+#
+# Defina LLM_EXT para fixar o caminho; sem isso, procura o primeiro
+# /Volumes/*/llm-models existente.
+#
+# O caminho detectado é PERSISTIDO em ext-root. Isso é essencial: com o disco
+# desconectado, /Volumes/*/llm-models não casa com nada, o script esqueceria que
+# existe uma biblioteca externa e rebaixaria os pesos do zero — 8 GB por engano.
+# Lembrando o caminho, ele sabe distinguir "não existe" de "está desconectado".
+EXT_STATE="$RUN_DIR/ext-root"
+EXT_ROOT="${LLM_EXT:-}"
+if [[ -z "$EXT_ROOT" ]]; then
+  for v in /Volumes/*/llm-models; do
+    [[ -d "$v" ]] && { EXT_ROOT="$v"; break; }
+  done
+fi
+if [[ -n "$EXT_ROOT" ]]; then
+  mkdir -p "$RUN_DIR" 2>/dev/null
+  printf '%s' "$EXT_ROOT" > "$EXT_STATE" 2>/dev/null
+elif [[ -f "$EXT_STATE" ]]; then
+  EXT_ROOT="$(cat "$EXT_STATE" 2>/dev/null)"   # conhecido, porém desconectado
+fi
+EXT_CACHE="${EXT_ROOT:+$EXT_ROOT/hf/hub}"
+
 # ─── perfis ─────────────────────────────────────────────────────────────────────
 # Em 16 GB unificados o teto prático de pesos é ~9 GB. Acima disso o macOS comprime
 # e swapa, e a geração desaba.
@@ -83,10 +111,37 @@ head_() { printf '\n%s%s%s\n' "$B" "$*" "$R"; }
 pf() { profiles | awk -F'|' -v p="$1" -v f="$2" '$1==p {print $f}'; }
 
 cache_dir_of() { printf '%s/models--%s' "$HF_CACHE" "${1//\//--}"; }
+ext_dir_of()   { [[ -n "$EXT_CACHE" ]] && printf '%s/models--%s' "$EXT_CACHE" "${1//\//--}"; }
 
-is_downloaded() {
-  local d; d="$(cache_dir_of "$1")"
-  [[ -d "$d" ]] && [[ -n "$(find "$d" -name '*.safetensors' -print -quit 2>/dev/null)" ]]
+ext_mounted() { [[ -n "$EXT_ROOT" && -d "$EXT_ROOT" ]]; }
+
+has_weights() {  # $1 = diretório de cache de um repo
+  [[ -n "$1" && -d "$1" ]] && [[ -n "$(find "$1" -name '*.safetensors' -print -quit 2>/dev/null)" ]]
+}
+
+is_downloaded()     { has_weights "$(cache_dir_of "$1")"; }
+is_downloaded_ext() { ext_mounted && has_weights "$(ext_dir_of "$1")"; }
+is_available()      { is_downloaded "$1" || is_downloaded_ext "$1"; }
+
+# Onde o modelo está: int, ext, ou vazio.
+location_of() {
+  is_downloaded "$1"     && { printf 'int'; return; }
+  is_downloaded_ext "$1" && { printf 'ext'; return; }
+  printf ''
+}
+
+# O que passar em --model. Para o cache interno basta o repo id (o próprio HF
+# resolve). Para o externo é preciso o caminho do snapshot, porque o servidor não
+# conhece esse cache.
+resolve_model_arg() {
+  local repo="$1"
+  if is_downloaded "$repo"; then printf '%s' "$repo"; return 0; fi
+  if is_downloaded_ext "$repo"; then
+    local snap
+    snap="$(find "$(ext_dir_of "$repo")/snapshots" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -1)"
+    [[ -n "$snap" ]] && { printf '%s' "$snap"; return 0; }
+  fi
+  return 1
 }
 
 free_ram_gb() {
@@ -184,12 +239,18 @@ cmd_models() {
   printf '%s%-9s %-8s %-6s %-6s %-11s %s%s\n' \
     "$DIM" "PERFIL" "EM DISCO" "ENGINE" "TOOLS" "ESTADO" "MODELO" "$R"
   while IFS='|' read -r name repo size engine tools extra desc; do
-    local state color tcolor disk
-    if is_downloaded "$repo"; then
+    local state color tcolor disk loc
+    loc="$(location_of "$repo")"
+    if [[ "$loc" == "int" ]]; then
       kb="$(cache_size_kb "$repo")"; total_kb=$((total_kb + kb))
       disk="$(human_gb "$kb")"
       if [[ "$repo" == "$cur" ]]; then state="EM USO"; color="$BLU"
-      else state="baixado"; color="$GRN"; fi
+      else state="interno"; color="$GRN"; fi
+    elif [[ "$loc" == "ext" ]]; then
+      kb="$(du -sk "$(ext_dir_of "$repo")" 2>/dev/null | cut -f1)"
+      disk="$(human_gb "${kb:-0}")"
+      if [[ "$repo" == "$cur" ]]; then state="EM USO/ext"; color="$BLU"
+      else state="EXTERNO"; color="$CYA"; fi
     else
       # ASCII de propósito: printf conta BYTES, e um travessão UTF-8 ocupa 3,
       # desalinhando a coluna inteira.
@@ -216,8 +277,14 @@ cmd_models() {
   done < <(cached_repos)
 
   head_ "Disco"
-  printf '  modelos em cache: %s%s%s · livre no disco: %s%s GB%s\n' \
+  printf '  modelos no interno: %s%s%s · livre no interno: %s%s GB%s\n' \
     "$B" "$(human_gb "$total_kb")" "$R" "$B" "$(free_disk_gb)" "$R"
+  if ext_mounted; then
+    printf '  disco externo: %s%s%s (livre %s GB)\n' \
+      "$CYA" "$EXT_ROOT" "$R" "$(df -g "$EXT_ROOT" 2>/dev/null | awk 'NR==2 {print $4}')"
+  elif [[ -n "$EXT_ROOT" ]]; then
+    printf '  %sdisco externo configurado mas NÃO montado: %s%s\n' "$YLW" "$EXT_ROOT" "$R"
+  fi
   printf '\n%sPadrão: %s · RAM livre: %s GB%s\n' "$DIM" "$DEFAULT_PROFILE" "$(free_ram_gb)" "$R"
   printf '%sTOOLS=sim -> serve como agente (pi, Cline). TOOLS=nao -> só chat/edit.%s\n' "$DIM" "$R"
   printf '\n%sBaixar:  %s add <org/repo>%s   %sRemover: %s rm <perfil|org/repo>%s\n' \
@@ -340,6 +407,64 @@ sys.exit(0 if '$mtype' in {x.name for x in pkgutil.iter_modules(m.__path__)} els
   say "${DIM}  meu-perfil|$repo|${size_gb}|$engine|?||Descrição sua.${R}"
 }
 
+# Move os pesos entre o cache interno e o disco externo.
+#
+# O cache do Hugging Face guarda os arquivos em blobs/ e cria SYMLINKS RELATIVOS
+# em snapshots/ apontando para eles. Uma cópia que siga os symlinks duplica o
+# tamanho (4,3 GB viram 8,6 GB). Por isso rsync -a, que preserva os links.
+move_model() {  # $1 = repo · $2 = origem · $3 = destino · $4 = rótulo
+  local repo="$1" src="$2" dst_root="$3" label="$4" kb need avail
+  [[ -d "$src" ]] || die "Não achei os pesos em $src"
+
+  kb="$(du -sk "$src" 2>/dev/null | cut -f1)"
+  need=$(( kb / 1048576 + 2 ))
+  avail="$(df -g "$dst_root" 2>/dev/null | awk 'NR==2 {print $4}')"
+  [[ -n "$avail" ]] && [[ "$avail" -lt "$need" ]] \
+    && die "Espaço insuficiente no destino: precisa ~${need} GB, há ${avail} GB."
+
+  head_ "Movendo para $label"
+  say "  $repo · $(human_gb "$kb")"
+  mkdir -p "$dst_root"
+  local dst="$dst_root/$(basename "$src")"
+
+  # -a preserva symlinks; --delete garante que uma tentativa anterior parcial
+  # não deixe restos que passem na verificação.
+  rsync -a --delete "$src/" "$dst/" || die "Falha ao copiar."
+
+  has_weights "$dst" || die "Cópia incompleta em $dst — origem preservada."
+  rm -rf "$src"
+  ok "Movido. Interno livre: $(free_disk_gb) GB"
+}
+
+cmd_archive() {
+  local t repo cur
+  t="${1:-}"
+  [[ -n "$t" ]] || die "Uso: $(basename "$0") archive <perfil|org/repo>"
+  ext_mounted || die "Disco externo não montado. Conecte-o (ou defina LLM_EXT)."
+  repo="$(resolve_target "$t")" || die "Não reconheci '$t'."
+
+  is_downloaded "$repo" || die "'$repo' não está no cache interno."
+  cur="$(loaded_repo)"
+  [[ "$repo" == "$cur" ]] && die "'$repo' está EM USO. Rode '$(basename "$0") stop' antes."
+
+  mkdir -p "$EXT_CACHE"
+  move_model "$repo" "$(cache_dir_of "$repo")" "$EXT_CACHE" "o disco externo"
+  say "${DIM}Para usar sem o disco conectado, traga de volta: $(basename "$0") restore $t${R}"
+}
+
+cmd_restore() {
+  local t repo
+  t="${1:-}"
+  [[ -n "$t" ]] || die "Uso: $(basename "$0") restore <perfil|org/repo>"
+  ext_mounted || die "Disco externo não montado. Conecte-o primeiro."
+  repo="$(resolve_target "$t")" || die "Não reconheci '$t'."
+
+  is_downloaded "$repo" && { ok "'$repo' já está no disco interno."; return 0; }
+  is_downloaded_ext "$repo" || die "'$repo' não está no disco externo."
+
+  move_model "$repo" "$(ext_dir_of "$repo")" "$HF_CACHE" "o disco interno"
+}
+
 cmd_gc() {
   head_ "Faxina no cache"
   [[ -x "$BIN_DIR/hf" ]] || die "Falta 'hf'."
@@ -446,12 +571,38 @@ cmd_start() {
   fi
   port_busy && die "Porta $PORT ocupada por outro processo. Use: LLM_PORT=8081 $(basename "$0") start"
 
-  is_downloaded "$repo" || cmd_pull "$profile" || exit 1
+  # Se o perfil vive no disco externo e ele não está montado, avise em vez de
+  # rebaixar 5 GB por engano. E diga o que está disponível agora.
+  if ! is_available "$repo"; then
+    if [[ -n "$EXT_ROOT" ]] && ! ext_mounted; then
+      warn "O disco externo ($EXT_ROOT) não está montado."
+      say  "Se '$profile' estiver arquivado nele, reconecte o disco."
+      local disp
+      disp="$(profiles | awk -F'|' '{print $1}' | while read -r p; do
+                is_downloaded "$(pf "$p" 2)" && printf '%s ' "$p"; done)"
+      [[ -n "$disp" ]] && say "Disponíveis no disco interno: ${B}${disp}${R}"
+      say "Ou rebaixe para o interno: $(basename "$0") pull $profile"
+      exit 1
+    fi
+    cmd_pull "$profile" || exit 1
+  fi
+
+  local model_arg
+  model_arg="$(resolve_model_arg "$repo")" || die "Não localizei os pesos de '$repo'."
 
   local avail; avail="$(free_ram_gb)"
   if awk -v w="$size" -v a="$avail" 'BEGIN{exit !(a < w + 1.5)}'; then
     warn "RAM livre (${avail} GB) é justa para ${size} GB de pesos — vai swapar."
     warn "Feche apps, ou use um perfil menor: $(basename "$0") start tiny"
+  fi
+
+  if [[ "$model_arg" != "$repo" ]]; then
+    # Ler de disco externo lento domina o tempo de carga — e por muito. Medido
+    # num case USB 2.0 (~40 MB/s): 8,4 GB levaram 409 s para subir, contra ~6 s
+    # do SSD interno. Avisa para não confundir barramento lento com modelo lento.
+    warn "Carregando do disco EXTERNO — bem mais lento que do interno."
+    say  "${DIM}Referência medida em USB 2.0: ~8 GB levaram ~7 min. Em USB 3+, ~30 s.${R}"
+    say  "${DIM}Para uso frequente: $(basename "$0") restore $profile${R}"
   fi
 
   head_ "Subindo $profile em http://$HOST:$PORT"
@@ -463,7 +614,7 @@ cmd_start() {
     #  --max-kv-size 8192  teto do cache KV, evita crescer até engolir a RAM
     #  --prefill-step-size reduz o pico de memória ao processar o prompt
     nohup "$(engine_bin vlm server)" \
-      --model "$repo" \
+      --model "$model_arg" \
       --host "$HOST" --port "$PORT" \
       --max-tokens 4096 \
       --max-kv-size 8192 \
@@ -477,7 +628,7 @@ cmd_start() {
     #                        Medido: prompt repetido de 3.5k tokens cai de 20s para
     #                        0.8s. É o que torna agente local viável.
     nohup "$(engine_bin lm server)" \
-      --model "$repo" \
+      --model "$model_arg" \
       --host "$HOST" --port "$PORT" \
       --temp 0.0 \
       --max-tokens 4096 \
@@ -654,6 +805,8 @@ ${B}llm-server${R} — LLM local em HTTP via MLX (API compatível com OpenAI)
   ${B}pull${R} <perfil>      baixa os pesos de um perfil
   ${B}add${R} <org/repo>     baixa qualquer modelo MLX do Hugging Face
   ${B}rm${R} <perfil|repo>   remove um modelo do disco
+  ${B}archive${R} <perfil>   move os pesos para o disco externo (libera o interno)
+  ${B}restore${R} <perfil>   traz os pesos de volta para o interno (para viajar)
   ${B}gc${R}                 tira downloads incompletos e lista o que está fora dos perfis
   ${B}bench${R}              mede tokens/s reais aqui
   ${B}tune${R}               ajuste de memória de GPU
@@ -681,6 +834,8 @@ case "${1:-start}" in
   pull)           shift || true; cmd_pull    "${1:-}" ;;
   add|download)   shift || true; cmd_add     "${1:-}" ;;
   rm|remove|del)  shift || true; cmd_rm      "${1:-}" "${2:-}" ;;
+  archive)        shift || true; cmd_archive "${1:-}" ;;
+  restore)        shift || true; cmd_restore "${1:-}" ;;
   gc|prune)       cmd_gc ;;
   tune)           cmd_tune ;;
   help|-h|--help) cmd_help ;;

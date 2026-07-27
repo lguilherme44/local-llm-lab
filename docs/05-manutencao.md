@@ -180,6 +180,85 @@ A varredura usa `fd -I` (`--no-ignore`). Sem essa flag, o `fd` respeita o `.giti
 
 Se você escrever qualquer varredura com `fd` ou `rg`, lembre disso.
 
+---
+
+## Modelos num disco externo
+
+Se o SSD interno está apertado, dá para manter os modelos grandes num disco externo. Dois comandos:
+
+```bash
+./macos/llm-server.command archive quality   # move os pesos para o externo
+./macos/llm-server.command restore quality   # traz de volta
+```
+
+O script detecta o primeiro `/Volumes/*/llm-models` que existir (ou use `LLM_EXT` para fixar). O `models` passa a mostrar a localização:
+
+```
+agent     4.3 GB   lm   sim   EM USO      (interno)
+quality   8.4 GB   vlm  ?     EXTERNO
+Disco
+  modelos no interno: 18.8 GB · livre no interno: 40 GB
+  disco externo: /Volumes/240GB/llm-models (livre 212 GB)
+```
+
+### A velocidade do barramento decide se isso serve
+
+Medido com um case **USB 2.0** (~40 MB/s sequencial):
+
+| operação | tempo |
+|---|---|
+| arquivar 8,4 GB | 4 min 52 s |
+| **subir o servidor lendo do externo** | **409 s (6 min 49 s)** |
+| subir o mesmo modelo do interno | ~6 s |
+
+**68× mais lento para carregar.** Note que o carregamento (20 MB/s efetivos) é pior que o `dd` sequencial (40 MB/s), porque ler pesos envolve acesso não-sequencial.
+
+Conclusão prática:
+
+- **USB 2.0 (~40 MB/s):** externo só para **arquivo morto** — modelos que você quase nunca sobe, dumps, backups. Modelos de trabalho ficam no interno.
+- **USB 3.0+ (~400 MB/s):** aí sim vale manter modelos grandes lá; a carga cai para ~30 s.
+
+Antes de planejar, meça o seu:
+
+```bash
+cd /Volumes/SEU_DISCO
+dd if=/dev/zero of=.t bs=1m count=1024   # escrita
+sync; sudo purge
+dd if=.t of=/dev/null bs=1m              # leitura
+rm .t
+```
+
+E confira se o disco não está atrás de um hub lento — foi o caso aqui:
+
+```bash
+ioreg -p IOUSB -w0 | rg -i "hub|product name"
+```
+
+Um SSD rápido ligado a um hub USB 2.0 entrega 40 MB/s. A topologia importa mais que o disco.
+
+### Seguro para desconectar
+
+O projeto assume que o disco vai e volta. **Só pesos de modelo vão para o externo** — nada que o sistema precise para funcionar. Desconectar não quebra nada; no pior caso um perfil fica indisponível:
+
+```
+! O disco externo (/Volumes/240GB/llm-models) não está montado.
+Disponíveis no disco interno: agent fast balanced tiny
+Ou rebaixe para o interno: llm-server.command pull quality
+```
+
+O caminho do disco é persistido em `~/.local/state/llm-server/ext-root`. Sem isso o script não conseguiria distinguir "esse modelo nunca foi baixado" de "está no disco que você desconectou" — e rebaixaria vários GB por engano. Foi exatamente o bug que apareceu no primeiro teste de desconexão.
+
+### O que NÃO colocar no externo
+
+- **`~/.cache/huggingface` inteiro via symlink** — desconectar quebra qualquer download ou leitura.
+- **`node_modules`** — builds ficam lentíssimos e quebram ao desconectar.
+- **Caches de ferramentas** (`uv`, `npm`, Homebrew) — usados constantemente.
+- **Qualquer coisa em `~/Library`** — o sistema espera que esteja sempre lá.
+
+A regra: se algo é lido durante trabalho normal, fica no interno.
+
+---
+
 ### Swap come disco
 
 Num Mac com pouca RAM, o `vm.swapusage` cresce e os swapfiles são arquivos reais de 1 GB cada. Observamos o swap ir de 9 GB para 16 GB sob carga de LLM, com o disco livre caindo de 13 GB para 7 GB **sem nenhum download novo**.

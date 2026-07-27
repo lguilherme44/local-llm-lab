@@ -72,9 +72,10 @@ scripts/
 | [4. Clientes](docs/04-clientes.md) | pi, Continue, Cline — e as armadilhas de cada um |
 | [5. Manutenção](docs/05-manutencao.md) | baixar, remover, tunar, liberar espaço |
 | [6. Troubleshooting](docs/06-troubleshooting.md) | sintoma → diagnóstico errado → causa real |
+| [7. Programando com o pi](docs/07-programando-com-pi.md) | o fluxo real de trabalho, o que funciona e o que não |
 | [Benchmarks](docs/benchmarks.md) | todos os números e como foram obtidos |
 
-Se você só quer que funcione, leia [Escolher o modelo](docs/02-escolher-modelo.md). Se algo já quebrou, vá direto ao [Troubleshooting](docs/06-troubleshooting.md).
+Se você só quer que funcione, leia [Escolher o modelo](docs/02-escolher-modelo.md). Se quer **programar** com isso, vá para [Programando com o pi](docs/07-programando-com-pi.md). Se algo já quebrou, [Troubleshooting](docs/06-troubleshooting.md).
 
 ---
 

@@ -465,6 +465,63 @@ cmd_restore() {
   move_model "$repo" "$(ext_dir_of "$repo")" "$HF_CACHE" "o disco interno"
 }
 
+# Mede o disco externo e diz se vale guardar modelos nele. A conclusão depende
+# só da velocidade: abaixo de ~100 MB/s o tempo de carga domina tudo.
+cmd_extbench() {
+  ext_mounted || die "Disco externo não montado (procuro /Volumes/*/llm-models ou \$LLM_EXT)."
+
+  head_ "Medindo $EXT_ROOT"
+  local t="$EXT_ROOT/.speedtest" w r
+  say "${DIM}escrevendo 1 GB...${R}"
+  w=$(dd if=/dev/zero of="$t" bs=1m count=1024 2>&1 | rg -o '[0-9]+ bytes/sec' | rg -o '^[0-9]+')
+
+  # Limpar o cache de página exige sudo. Sem isso a leitura sai da RAM e mede
+  # 20+ GB/s — número impossível para USB, que denuncia a medição inválida.
+  local purged=0
+  sync
+  if sudo -n purge >/dev/null 2>&1; then purged=1; fi
+
+  say "${DIM}lendo 1 GB...${R}"
+  r=$(dd if="$t" of=/dev/null bs=1m 2>&1 | rg -o '[0-9]+ bytes/sec' | rg -o '^[0-9]+')
+  rm -f "$t"
+
+  local wmb rmb
+  wmb=$(awk -v v="${w:-0}" 'BEGIN{printf "%.0f", v/1048576}')
+  rmb=$(awk -v v="${r:-0}" 'BEGIN{printf "%.0f", v/1048576}')
+
+  # Sanidade: nenhum barramento USB passa de ~2 GB/s. Acima disso é cache.
+  local read_valid=1
+  [[ "${rmb:-0}" -gt 2000 ]] && read_valid=0
+
+  printf '  escrita: %s%s MB/s%s\n' "$B" "$wmb" "$R"
+  if [[ "$read_valid" -eq 1 ]]; then
+    printf '  leitura: %s%s MB/s%s\n' "$B" "$rmb" "$R"
+  else
+    printf '  leitura: %s%s MB/s — INVÁLIDO (veio do cache de RAM)%s\n' "$YLW" "$rmb" "$R"
+    [[ "$purged" -eq 0 ]] && say "  ${DIM}para medir leitura de verdade: sudo -v && $(basename "$0") extbench${R}"
+    say  "  ${DIM}usando a escrita como referência — nesses cases ela acompanha a leitura${R}"
+    rmb="$wmb"
+  fi
+
+  # Estimativa de carga para um modelo de 5 GB. O carregamento real fica abaixo do
+  # dd sequencial, porque ler pesos não é acesso linear (medimos ~50% do dd).
+  local est
+  est=$(awk -v v="${rmb:-1}" 'BEGIN{ if (v<1) v=1; printf "%.0f", 5120/(v*0.5)}')
+  printf '  carga estimada de um modelo de 5 GB: ~%ss\n' "$est"
+
+  head_ "Veredito"
+  if [[ "${rmb:-0}" -lt 100 ]]; then
+    warn "Abaixo de 100 MB/s: use o externo só para ARQUIVO (modelos que quase nunca sobe)."
+    say  "  Modelos de trabalho devem ficar no disco interno."
+    printf "\n  %sSe esperava mais: confira se o disco está atrás de um hub lento:%s\n" "$DIM" "$R"
+    say  "  ${DIM}ioreg -p IOUSB -w0 | rg -i 'hub|product name'${R}"
+    say  "  ${DIM}Um SSD rápido num hub USB 2.0 entrega ~40 MB/s. Ligue direto no Mac.${R}"
+  else
+    ok "Rápido o suficiente para guardar modelos que você usa de vez em quando."
+    say "  ${DIM}Arquive os grandes: $(basename "$0") archive <perfil>${R}"
+  fi
+}
+
 cmd_gc() {
   head_ "Faxina no cache"
   [[ -x "$BIN_DIR/hf" ]] || die "Falta 'hf'."
@@ -836,6 +893,7 @@ case "${1:-start}" in
   rm|remove|del)  shift || true; cmd_rm      "${1:-}" "${2:-}" ;;
   archive)        shift || true; cmd_archive "${1:-}" ;;
   restore)        shift || true; cmd_restore "${1:-}" ;;
+  extbench)       cmd_extbench ;;
   gc|prune)       cmd_gc ;;
   tune)           cmd_tune ;;
   help|-h|--help) cmd_help ;;

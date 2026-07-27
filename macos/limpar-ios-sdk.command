@@ -71,7 +71,7 @@ warn "reinstalar o Xcode e baixar o runtime outra vez (vários GB)."
 # EOF na hora e cancelaria em silêncio, parecendo que o script não funciona.
 # Nesse caso exigimos a intenção explícita via --yes.
 if [[ "${1:-}" == "--yes" || "${1:-}" == "-y" ]]; then
-  say "\n${DIM}--yes recebido: prosseguindo sem perguntar.${R}"
+  printf "\n%s--yes recebido: prosseguindo sem perguntar.%s\n" "$DIM" "$R"
 elif [[ ! -t 0 ]]; then
   printf '\n'
   warn "Sem terminal interativo — não consigo ler sua confirmação aqui."

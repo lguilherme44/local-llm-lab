@@ -181,6 +181,12 @@ $Headers = @{ 'Content-Type' = 'application/json'; 'Authorization' = "Bearer $Ap
 # Testado no equivalente MLX: Qwen2.5-Coder emite a tag errada (<tools> em vez de
 # <tool_call>) e o tool_calls volta null. O fine-tune para código degradou isso.
 #
+# Os tok/s das descrições valem para ESTA GPU. Números do lado macOS (~19 tok/s
+# de geração, ~176 de prefill) são de um MacBook Air M4 com MLX e não se
+# transferem: medido aqui, o mesmo Qwen3-8B faz ~73 tok/s de geração e ~400 de
+# prefill, com o modelo inteiro na VRAM. Herdar número de outra máquina foi
+# exatamente o erro que essas descrições carregaram até serem medidas.
+#
 # ExtraArgs = flags que só fazem sentido para aquele modelo. Todo perfil declara
 # o campo, mesmo vazio: sob Set-StrictMode, ler propriedade ausente de um
 # pscustomobject é erro — a mesma armadilha do campo opcional que derrubou os
@@ -198,7 +204,7 @@ $Profiles = @(
         Name = 'agent'; Repo = 'Qwen/Qwen3-8B-GGUF'; Quant = 'Q4_K_M'
         FileGB = 5.03; Ctx = 16384; VramGB = 6.24; Tools = $true
         ExtraArgs = @('--reasoning', 'off')
-        Desc = 'Qwen3 8B. Tool calling validado (ciclo completo), ~19 tok/s. Melhor qualidade com tools. Padrao.'
+        Desc = 'Qwen3 8B. Tool calling validado (ciclo completo). ~73 tok/s de geracao e ~400 de prefill nesta 3060 Ti. Padrao.'
     },
     [pscustomobject]@{
         Name = 'fast'; Repo = 'bartowski/Qwen2.5-Coder-7B-Instruct-GGUF'; Quant = 'Q4_K_M'
@@ -216,7 +222,7 @@ $Profiles = @(
         Name = 'tiny'; Repo = 'Qwen/Qwen3-4B-GGUF'; Quant = 'Q4_K_M'
         FileGB = 2.50; Ctx = 32768; VramGB = 4.1; Tools = $true
         ExtraArgs = @('--reasoning', 'off')
-        Desc = 'Qwen3 4B. Tool calling validado e ~33 tok/s — quase 2x o 8B. Cabe com folga em 8 GB. Comece por este.'
+        Desc = 'Qwen3 4B. Tool calling validado. Mais rapido que o 8B, mas ainda NAO medido nesta GPU. Cabe com folga em 8 GB.'
     }
 )
 
@@ -654,11 +660,69 @@ function Invoke-Ask([string]$question) {
     Write-Dim ("`n[{0:N1}s{1}]" -f $s, $rate)
 }
 
-function Invoke-Bench {
+function Get-Median([double[]]$valores) {
+    $s = @($valores | Sort-Object)
+    if ($s.Count -eq 0) { return 0 }
+    if ($s.Count % 2) { return $s[[int](($s.Count - 1) / 2)] }
+    ($s[$s.Count / 2 - 1] + $s[$s.Count / 2]) / 2
+}
+
+function Invoke-Bench([int]$rodadas = 4) {
     if (-not (Get-ServerProcess)) { Write-Err2 'Servidor parado. Suba com: .\llm-server.ps1 start'; exit 1 }
-    $cur = if (Test-Path $ProfFile) { Get-Content $ProfFile } else { '?' }
-    Write-Head "Medindo nesta maquina (perfil $cur)"
-    Invoke-Ask 'Implemente quicksort em Python com comentarios curtos.' | Out-Null
+    $alias = if (Test-Path $ProfFile) { Get-Content $ProfFile } else { $DefaultProfile }
+
+    Write-Head "Medindo nesta maquina (perfil $alias · $rodadas rodadas, 1a descartada)"
+
+    # Uma amostra unica nao mede nada: a primeira chamada paga cache frio e
+    # qualquer variacao passa por resultado. Daí repetir e usar a mediana.
+    #
+    # Os numeros vem do bloco `timings` do llama-server, nao do cronometro
+    # daqui. Isso separa prefill de geracao — medir tokens/tempo-total mistura
+    # os dois e faz a taxa cair junto com o tamanho do prompt, que foi como o
+    # numero antigo destas descricoes nasceu errado.
+    $gen = New-Object 'System.Collections.Generic.List[double]'
+    $pre = New-Object 'System.Collections.Generic.List[double]'
+
+    for ($i = 1; $i -le $rodadas; $i++) {
+        # Sufixo variavel: sem isso o prompt cache serve a resposta e o bench
+        # passa a medir o cache, nao o modelo.
+        $body = @{
+            model       = $alias
+            messages    = @(@{ role = 'user'; content = "Implemente quicksort em Python com comentarios curtos. (v$i)" })
+            max_tokens  = 600
+            temperature = 0
+        } | ConvertTo-Json -Depth 5
+
+        try {
+            $r = Invoke-RestMethod "http://${ProbeHost}:$Port/v1/chat/completions" -Method Post `
+                     -Headers $Headers -Body $body -TimeoutSec 1800
+        } catch {
+            Write-Err2 "Rodada $i falhou: $($_.Exception.Message)"
+            exit 1
+        }
+
+        # Servidores antigos podem nao devolver `timings`; sob StrictMode, ler a
+        # propriedade ausente aborta. Checar antes.
+        $t = if ($r.PSObject.Properties.Name -contains 'timings') { $r.timings } else { $null }
+        if (-not $t) {
+            Write-Warn2 'Este llama-server nao devolve `timings`; sem separar prefill de geracao.'
+            Write-Dim  "  rodada $i : $($r.usage.completion_tokens) tokens gerados"
+            continue
+        }
+
+        $descartada = ($i -eq 1)
+        if (-not $descartada) { $gen.Add($t.predicted_per_second); $pre.Add($t.prompt_per_second) }
+        Write-Dim ("  [{0}] geracao {1,6:N1} tok/s · prefill {2,7:N1} tok/s · {3,3} tokens{4}" -f `
+                   $i, $t.predicted_per_second, $t.prompt_per_second, $t.predicted_n,
+                   $(if ($descartada) { '  (descartada)' } else { '' }))
+    }
+
+    if ($gen.Count -gt 0) {
+        Write-Ok  ("geracao: mediana {0:N1} tok/s (min {1:N1} · max {2:N1})" -f `
+                   (Get-Median $gen.ToArray()), ($gen | Measure-Object -Minimum).Minimum, ($gen | Measure-Object -Maximum).Maximum)
+        Write-Ok  ("prefill: mediana {0:N1} tok/s" -f (Get-Median $pre.ToArray()))
+        Write-Dim 'Compare com a descricao do perfil em `models` — se divergir, a descricao esta velha.'
+    }
 }
 
 function Invoke-Help {

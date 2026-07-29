@@ -13,12 +13,12 @@ Todo número deste repositório saiu de um comando executado. Esta página docum
 - **Sem ventoinha** (refrigeração passiva)
 - macOS 26.5
 
-**Máquina B** — Windows (scripts entregues, benchmarks pendentes)
+**Máquina B** — Windows
 - RTX 3060 Ti, 8 GB de VRAM
 - 16 GB de RAM
 - SSD 1 TB
 
-Todos os números abaixo são da Máquina A.
+Salvo onde estiver dito o contrário, os números abaixo são da **Máquina A**. Os da Máquina B estão na seção [RTX 3060 Ti](#máquina-b-rtx-3060-ti-llamacpp--cuda).
 
 ---
 
@@ -93,6 +93,29 @@ O Gemma 4 não é 28× pior — ele não cabia. Com ~3 GB de RAM livre e 14 GB d
 Prefill e geração são gargalos independentes: ~176 tok/s de entrada, ~19 tok/s de saída.
 
 **Por que isso decide se agente local é viável:** um agente injeta system prompt, definições de ferramentas e histórico a cada turno. Com 3.500 tokens são 20 s antes do primeiro token; com 10k, mais de um minuto — a cada passo.
+
+---
+
+## Máquina B: RTX 3060 Ti (llama.cpp + CUDA)
+
+**Método:** `llm-server.ps1 bench` — 4 rodadas, a primeira descartada, mediana das outras. Os números vêm do bloco `timings` que o `llama-server` devolve, não de cronômetro do cliente: isso separa prefill de geração e mantém a latência de rede fora da conta. O prompt varia a cada rodada (sufixo `(vN)`) para o prompt cache não servir a resposta e o bench acabar medindo o cache.
+
+Modelo: Qwen3-8B-GGUF Q4_K_M, perfil `agent`, contexto 16k, `-ngl 999` (modelo inteiro na VRAM), cache KV em q8_0, `--reasoning off`.
+
+| | Máquina A (M4 / MLX) | Máquina B (3060 Ti / CUDA) |
+|---|---|---|
+| geração | ~19 tok/s | **72,5 tok/s** |
+| prefill | ~176 tok/s | **393 tok/s** |
+
+Medido em duas implementações independentes — o `bench` do script e um cliente Python separado — que chegaram a 72,5 e 72,9 tok/s. A dispersão entre rodadas foi de 70,4 a 72,8.
+
+**A primeira rodada mede outra coisa:** o prefill dela ficou em **40 tok/s** contra ~390 nas seguintes, com cache frio. É por isso que ela é descartada em vez de entrar na média.
+
+**Ciclo completo de tool calling:** turno 1 em 0,7 s, turno 2 em 1,9 s (`LLM_HOST=192.168.3.51 scripts/test-tools.py agent`). Para comparar com a experiência na Máquina A: o `pi` ali gastava ~2 minutos por turno.
+
+**O erro que esses números corrigiram:** as descrições dos perfis do `llm-server.ps1` diziam `~19 tok/s` e `~33 tok/s` — herdados do lado macOS, nunca medidos nesta GPU. Um número copiado de outra máquina parece um número medido, e nada no repositório denunciava a diferença. Compare flags e hardware antes de reaproveitar qualquer medida.
+
+**Sobre `--reasoning off`:** o Qwen3 pensa por padrão. Isso não muda o tok/s de geração — muda **quantos** tokens ele gera para dizer a mesma coisa. Medido no mesmo prompt: 112 a 333 tokens com raciocínio ligado, **5** com ele desligado. Veja [troubleshooting](06-troubleshooting.md).
 
 ---
 
@@ -188,4 +211,19 @@ python3 scripts/test-tools.py mlx-community/Qwen3-8B-4bit 8080
 # prefill e prompt cache: rode a mesma requisição grande duas vezes
 ```
 
+Na Máquina B:
+
+```powershell
+.\windows\llm-server.ps1 start agent
+.\windows\llm-server.ps1 bench
+```
+
+E de outra máquina da rede, contra o servidor da Máquina B:
+
+```bash
+LLM_HOST=192.168.3.51 python3 scripts/test-tools.py agent
+```
+
 Se seus números divergirem muito, verifique nesta ordem: RAM livre, swap, e se o modelo cabe. Quase toda divergência grande vem daí — não do modelo.
+
+Na Máquina B a ordem é outra, porque o teto é VRAM: confirme com `.\windows\llm-server.ps1 vram` que o perfil cabe nos 8 GB. Se não couber, o llama.cpp move camadas para a CPU e a geração despenca sem avisar.

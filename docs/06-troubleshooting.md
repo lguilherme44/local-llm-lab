@@ -224,6 +224,21 @@ Este bug esteve no `llm-server.command`: os perfis com flags extras (`agent`, `q
 
 **`read` sem TTY recebe EOF na hora.** Um script com confirmação interativa cancela sozinho quando rodado por pipe ou por um agente. Detecte com `[[ ! -t 0 ]]` e ofereça uma flag `--yes`.
 
+**Resposta vazia sem erro nenhum? O raciocínio comeu o `max_tokens`.** O Qwen3 pensa por padrão, e o bloco de raciocínio é gerado **antes** da resposta. Se `max_tokens` acaba durante o raciocínio, o servidor devolve `content: ""` com `finish_reason: "stop"` — sucesso aparente, resposta nenhuma.
+
+Medido no `llama-server` do Windows, perfil `agent`, antes da correção:
+
+```
+max_tokens: 30   → content: ''            (30 tokens, todos em raciocínio)
+max_tokens: 400  → content: 'OK.'         (112 tokens, ~98 em reasoning_content)
+```
+
+Cento e doze tokens para dizer "OK". Com `--jinja`, o `llama-server` separa isso em `message.reasoning_content` em vez de vazar `<think>` no conteúdo — mais limpo de ler, e mais fácil de não perceber que está acontecendo.
+
+Por isso os perfis Qwen3 sobem com `--reasoning off` (o binário também aceita `--reasoning-budget 0`, que atinge o fim do raciocínio imediatamente mas ainda gasta os tokens de abre-e-fecha do template). No macOS o equivalente é `--chat-template-args {"enable_thinking":false}`.
+
+**A lição maior:** ao comparar duas plataformas servindo o "mesmo" modelo, compare as flags, não só o nome do modelo. Essa divergência existiu entre `llm-server.command` e `llm-server.ps1` sem que nenhum teste falhasse — os dois respondiam, só que um pensava e o outro não.
+
 **`.ps1` precisa de BOM; `.yaml` e `.json` não podem ter.** A regra é oposta para cada um, e trocá-las quebra os dois.
 
 O Windows PowerShell 5.1 — o `powershell.exe` que já vem no Windows — lê arquivo `.ps1` **sem** BOM como ANSI (Windows-1252). Todo caractere UTF-8 multibyte do script (`á`, `é`, `—`, `─`) chega ao parser como dois caracteres de lixo. Em comentário, o resultado é feio; dentro de uma string exibida, a saída fica ilegível. O PowerShell 7+ (`pwsh.exe`) assume UTF-8 sem BOM e não sofre disso — o que torna o bug invisível para quem só testa no 7.

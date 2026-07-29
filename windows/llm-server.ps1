@@ -180,25 +180,42 @@ $Headers = @{ 'Content-Type' = 'application/json'; 'Authorization' = "Bearer $Ap
 # Tools = o modelo emite tool_calls estruturado, ou seja: serve como AGENTE.
 # Testado no equivalente MLX: Qwen2.5-Coder emite a tag errada (<tools> em vez de
 # <tool_call>) e o tool_calls volta null. O fine-tune para código degradou isso.
+#
+# ExtraArgs = flags que só fazem sentido para aquele modelo. Todo perfil declara
+# o campo, mesmo vazio: sob Set-StrictMode, ler propriedade ausente de um
+# pscustomobject é erro — a mesma armadilha do campo opcional que derrubou os
+# perfis sem flags no lado macOS (veja docs/06-troubleshooting.md).
+#
+# --reasoning off nos dois Qwen3: eles pensam por padrão, e o raciocínio consome
+# a cota de max_tokens ANTES de gerar resposta. Um cliente que peça poucos
+# tokens recebe content vazio com finish_reason "stop" e nenhum erro — falha
+# silenciosa medida na prática (112 tokens para responder "OK", ~98 deles em
+# reasoning_content). É o equivalente ao --chat-template-args
+# {"enable_thinking":false} que o llm-server.command usa no macOS; sem isto as
+# duas plataformas servem o MESMO modelo com comportamento diferente.
 $Profiles = @(
     [pscustomobject]@{
         Name = 'agent'; Repo = 'Qwen/Qwen3-8B-GGUF'; Quant = 'Q4_K_M'
         FileGB = 5.03; Ctx = 16384; VramGB = 6.24; Tools = $true
+        ExtraArgs = @('--reasoning', 'off')
         Desc = 'Qwen3 8B. Tool calling validado (ciclo completo), ~19 tok/s. Melhor qualidade com tools. Padrao.'
     },
     [pscustomobject]@{
         Name = 'fast'; Repo = 'bartowski/Qwen2.5-Coder-7B-Instruct-GGUF'; Quant = 'Q4_K_M'
         FileGB = 4.68; Ctx = 16384; VramGB = 5.7; Tools = $false
+        ExtraArgs = @()
         Desc = 'Qwen2.5 Coder 7B. Escreve codigo melhor, mas NAO serve como agente. Ideal para chat/edit no VSCode.'
     },
     [pscustomobject]@{
         Name = 'quality'; Repo = 'bartowski/Qwen2.5-Coder-14B-Instruct-GGUF'; Quant = 'Q4_K_M'
         FileGB = 8.99; Ctx = 8192; VramGB = 9.6; Tools = $false
+        ExtraArgs = @()
         Desc = 'Qwen2.5 Coder 14B. NAO CABE nos 8 GB: parte das camadas vai para a CPU e fica lento. Use so se aceitar a queda.'
     },
     [pscustomobject]@{
         Name = 'tiny'; Repo = 'Qwen/Qwen3-4B-GGUF'; Quant = 'Q4_K_M'
         FileGB = 2.50; Ctx = 32768; VramGB = 4.1; Tools = $true
+        ExtraArgs = @('--reasoning', 'off')
         Desc = 'Qwen3 4B. Tool calling validado e ~33 tok/s — quase 2x o 8B. Cabe com folga em 8 GB. Comece por este.'
     }
 )
@@ -507,6 +524,14 @@ function Invoke-Start($name) {
         # so escutamos em 127.0.0.1, o risco e baixo, mas fechamos de todo jeito.
         '--api-key', 'local'
     )
+
+    # Flags do perfil (ex.: --reasoning off nos Qwen3). Array vazio some aqui
+    # sem quebrar nada — mas o campo tem de existir em TODO perfil, senao o
+    # StrictMode aborta ao ler propriedade ausente.
+    if ($p.ExtraArgs -and $p.ExtraArgs.Count -gt 0) {
+        $serverArgs += $p.ExtraArgs
+        Write-Dim "flags do perfil: $($p.ExtraArgs -join ' ')"
+    }
 
     $proc = Start-Process -FilePath $exe -ArgumentList $serverArgs -PassThru -NoNewWindow `
                           -RedirectStandardOutput $LogFile -RedirectStandardError "$LogFile.err"

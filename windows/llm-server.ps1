@@ -181,11 +181,12 @@ $Headers = @{ 'Content-Type' = 'application/json'; 'Authorization' = "Bearer $Ap
 # Testado no equivalente MLX: Qwen2.5-Coder emite a tag errada (<tools> em vez de
 # <tool_call>) e o tool_calls volta null. O fine-tune para código degradou isso.
 #
-# Os tok/s das descrições valem para ESTA GPU. Números do lado macOS (~19 tok/s
-# de geração, ~176 de prefill) são de um MacBook Air M4 com MLX e não se
-# transferem: medido aqui, o mesmo Qwen3-8B faz ~73 tok/s de geração e ~400 de
-# prefill, com o modelo inteiro na VRAM. Herdar número de outra máquina foi
-# exatamente o erro que essas descrições carregaram até serem medidas.
+# Os tok/s das descrições valem para ESTA GPU, medidos com `bench`. Números do
+# lado macOS (~19 tok/s de geração, ~176 de prefill) são de um MacBook Air M4
+# com MLX e não se transferem: aqui o mesmo Qwen3-8B faz ~73 tok/s e o 4B ~110,
+# com o modelo inteiro na VRAM. Herdar número de outra máquina foi exatamente o
+# erro que essas descrições carregaram até serem medidas — inclusive na RELAÇÃO
+# entre elas, que afirmava "quase 2x" quando o medido é 1,5x.
 #
 # ExtraArgs = flags que só fazem sentido para aquele modelo. Todo perfil declara
 # o campo, mesmo vazio: sob Set-StrictMode, ler propriedade ausente de um
@@ -222,7 +223,7 @@ $Profiles = @(
         Name = 'tiny'; Repo = 'Qwen/Qwen3-4B-GGUF'; Quant = 'Q4_K_M'
         FileGB = 2.50; Ctx = 32768; VramGB = 4.1; Tools = $true
         ExtraArgs = @('--reasoning', 'off')
-        Desc = 'Qwen3 4B. Tool calling validado. Mais rapido que o 8B, mas ainda NAO medido nesta GPU. Cabe com folga em 8 GB.'
+        Desc = 'Qwen3 4B. Tool calling validado (ciclo completo). ~110 tok/s de geracao e ~575 de prefill: 1,5x o 8B, nao 2x. Cabe com folga em 8 GB.'
     }
 )
 

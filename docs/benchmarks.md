@@ -100,20 +100,31 @@ Prefill e geração são gargalos independentes: ~176 tok/s de entrada, ~19 tok/
 
 **Método:** `llm-server.ps1 bench` — 4 rodadas, a primeira descartada, mediana das outras. Os números vêm do bloco `timings` que o `llama-server` devolve, não de cronômetro do cliente: isso separa prefill de geração e mantém a latência de rede fora da conta. O prompt varia a cada rodada (sufixo `(vN)`) para o prompt cache não servir a resposta e o bench acabar medindo o cache.
 
-Modelo: Qwen3-8B-GGUF Q4_K_M, perfil `agent`, contexto 16k, `-ngl 999` (modelo inteiro na VRAM), cache KV em q8_0, `--reasoning off`.
+Modelos em Q4_K_M, `-ngl 999` (modelo inteiro na VRAM), cache KV em q8_0, `--reasoning off`. Contexto 16k no `agent`, 32k no `tiny`.
 
-| | Máquina A (M4 / MLX) | Máquina B (3060 Ti / CUDA) |
+| perfil | modelo | geração | prefill |
+|---|---|---|---|
+| `agent` | Qwen3-8B | **72,5 tok/s** | **393 tok/s** |
+| `tiny` | Qwen3-4B | **110,4 tok/s** | **575 tok/s** |
+
+Contra a Máquina A, no mesmo Qwen3-8B: 19 tok/s de geração e 176 de prefill. A GPU dedicada é ~3,8× em geração e ~2,2× em prefill.
+
+O `agent` foi medido em duas implementações independentes — o `bench` do script e um cliente Python separado — que deram 72,5 e 72,9 tok/s. A dispersão entre rodadas ficou dentro de 0,4 tok/s nos dois perfis.
+
+**A primeira rodada mede outra coisa:** o prefill dela ficou em 40 tok/s (`agent`) e 105 (`tiny`) contra ~390 e ~575 nas seguintes, com cache frio. É por isso que ela é descartada em vez de entrar na média.
+
+**Ciclo completo de tool calling**, ambos aprovados (`LLM_HOST=<ip> scripts/test-tools.py <alias>`):
+
+| perfil | turno 1 | turno 2 |
 |---|---|---|
-| geração | ~19 tok/s | **72,5 tok/s** |
-| prefill | ~176 tok/s | **393 tok/s** |
+| `agent` | 0,7 s | 1,9 s |
+| `tiny` | 0,6 s | 0,7 s |
 
-Medido em duas implementações independentes — o `bench` do script e um cliente Python separado — que chegaram a 72,5 e 72,9 tok/s. A dispersão entre rodadas foi de 70,4 a 72,8.
+Para comparar com a experiência na Máquina A: o `pi` ali gastava ~2 minutos por turno.
 
-**A primeira rodada mede outra coisa:** o prefill dela ficou em **40 tok/s** contra ~390 nas seguintes, com cache frio. É por isso que ela é descartada em vez de entrar na média.
+**O erro que esses números corrigiram:** as descrições dos perfis do `llm-server.ps1` diziam `~19 tok/s` e `~33 tok/s` — herdados do lado macOS, nunca medidos nesta GPU. Um número copiado de outra máquina parece um número medido, e nada no repositório denunciava a diferença.
 
-**Ciclo completo de tool calling:** turno 1 em 0,7 s, turno 2 em 1,9 s (`LLM_HOST=192.168.3.51 scripts/test-tools.py agent`). Para comparar com a experiência na Máquina A: o `pi` ali gastava ~2 minutos por turno.
-
-**O erro que esses números corrigiram:** as descrições dos perfis do `llm-server.ps1` diziam `~19 tok/s` e `~33 tok/s` — herdados do lado macOS, nunca medidos nesta GPU. Um número copiado de outra máquina parece um número medido, e nada no repositório denunciava a diferença. Compare flags e hardware antes de reaproveitar qualquer medida.
+Errado inclusive na **relação** entre os dois: a descrição do `tiny` afirmava "quase 2× o 8B", extrapolando de 33 contra 19. Medido, são **1,5×** — 110,4 contra 72,5. Vale como aviso: razão derivada de números herdados erra junto com eles, e soa mais confiável porque parece uma comparação interna. Compare hardware e flags antes de reaproveitar qualquer medida.
 
 **Sobre `--reasoning off`:** o Qwen3 pensa por padrão. Isso não muda o tok/s de geração — muda **quantos** tokens ele gera para dizer a mesma coisa. Medido no mesmo prompt: 112 a 333 tokens com raciocínio ligado, **5** com ele desligado. Veja [troubleshooting](06-troubleshooting.md).
 

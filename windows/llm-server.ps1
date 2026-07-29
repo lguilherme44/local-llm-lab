@@ -52,7 +52,14 @@ Set-StrictMode -Version Latest
 
 # ─── ajustes ──────────────────────────────────────────────────────────────────
 $Port           = if ($env:LLM_PORT) { [int]$env:LLM_PORT } else { 8080 }
-$BindHost       = '127.0.0.1'   # só local. 0.0.0.0 exporia o modelo na rede.
+# Padrão só local. LLM_HOST='0.0.0.0' serve o modelo para a rede — útil para
+# atender outra máquina (ex.: um Mac sem RAM sobrando), mas leia o aviso:
+# `--api-key local` sobre HTTP puro não protege nada de quem está na mesma LAN.
+# Nesse caso, restrinja também o firewall à sua faixa de IP.
+$BindHost       = if ($env:LLM_HOST) { $env:LLM_HOST } else { '127.0.0.1' }
+# Endereço que ESTE script usa para falar com o servidor (health check, ask).
+# Com bind em 0.0.0.0, pedir http://0.0.0.0:8080 é frágil — sonde 127.0.0.1.
+$ProbeHost      = if ($BindHost -in @('0.0.0.0', '::', '*')) { '127.0.0.1' } else { $BindHost }
 $DefaultProfile = 'agent'
 
 $Root    = Join-Path $env:LOCALAPPDATA 'llm-server'
@@ -327,7 +334,7 @@ function Wait-Ready([int]$procId, [string]$alias, [int]$timeoutSec = 420) {
             Write-Host ''; return 'died'
         }
         try {
-            Invoke-RestMethod "http://${BindHost}:$Port/v1/chat/completions" -Method Post `
+            Invoke-RestMethod "http://${ProbeHost}:$Port/v1/chat/completions" -Method Post `
                 -Headers $Headers -Body $body -TimeoutSec 10 | Out-Null
             Write-Host ''
             return [int]$sw.Elapsed.TotalSeconds
@@ -492,7 +499,7 @@ function Invoke-Ask([string]$question) {
 
     $sw = [Diagnostics.Stopwatch]::StartNew()
     try {
-        $r = Invoke-RestMethod "http://${BindHost}:$Port/v1/chat/completions" -Method Post `
+        $r = Invoke-RestMethod "http://${ProbeHost}:$Port/v1/chat/completions" -Method Post `
                  -Headers $Headers -Body $body -TimeoutSec 1800
     } catch {
         Write-Err2 "Falhou: $($_.Exception.Message)"

@@ -70,6 +70,33 @@ Não confunda isso com travamento. Nós confundimos: interrompemos a execução 
 
 O prompt cache é o que torna isso viável do segundo turno em diante — prefixo repetido cai de 20 s para 0,78 s.
 
+### `pi -p` responde e não encerra: é extensão, não o modelo
+
+Em modo não-interativo (`-p` / `--print`) o `pi` pode imprimir a resposta correta e **nunca sair** — processo vivo, 0% de CPU, indefinidamente. É fácil ler isso como servidor lento e ir mexer no lugar errado.
+
+Não é o modelo. Medido contra um servidor a 110 tok/s:
+
+| invocação | resultado |
+|---|---|
+| `pi -p "..."` | responde e pendura (>10 min, nunca saiu) |
+| `pi -ne -p "..."` | responde e **sai em 2 s, exit 0** |
+| `pi -ns -p "..."` (sem skills) | pendura |
+| `pi -np -p "..."` (sem prompt templates) | pendura |
+
+Só `--no-extensions` resolve, o que isola a causa em **extensão** — não em skill nem em template. Neste caso o culpado apareceu na árvore de processos: o único filho direto do `pi` era o broker da extensão `pi-intercom`.
+
+```bash
+pgrep -P <pid-do-pi> | xargs ps -o pid,command -p
+```
+
+Em Node, um processo filho vivo mantém o event loop do pai aberto. O broker não é encerrado ao fim do turno, então o `pi` fica preso mesmo tendo terminado o trabalho.
+
+**Para uso não-interativo — scripts, CI, um agente chamando o `pi` — passe `-ne`.** No modo interativo o problema não aparece: você fecha a sessão e o processo vai junto.
+
+Vale a ressalva de escopo: a lista de extensões instaladas é de cada máquina. Se `pi -p` pendurar na sua, rode o `pgrep` acima antes de culpar o `pi-intercom` — o método é o que se aproveita, não o nome do culpado.
+
+Não confunda com o parágrafo anterior: ali o turno era lento e **terminava**; aqui ele termina e o processo não morre. Sintoma parecido, causas diferentes.
+
 ---
 
 ## Continue (VSCode)

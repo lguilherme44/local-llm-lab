@@ -219,9 +219,12 @@ Se você tem uma segunda máquina com o modelo carregado, o cliente só precisa 
 Do lado que **serve** (Windows, `llama-server`):
 
 ```powershell
-$env:LLM_HOST = '0.0.0.0'          # o padrão é 127.0.0.1 e recusa a LAN
-.\windows\llm-server.ps1 start agent
+.\windows\llm-server.ps1 start agent -Lan
 ```
+
+O `-Lan` faz bind **no IP da interface física ativa, e só nele**. O padrão sem a flag é `127.0.0.1`, que não sai da máquina.
+
+**Não use `0.0.0.0`**, mesmo que o `$env:LLM_HOST` aceite. Aquilo escuta em *toda* interface: VPN corporativa conectada, Hyper-V, WSL, Tailscale. Um bind num IP específico limita a exposição à rede que você realmente quis atender. Se o `-Lan` não conseguir resolver a interface, ele **falha** em vez de abrir tudo — passe o endereço à mão com `$env:LLM_HOST = '192.168.3.51'`.
 
 E libere a porta apenas para a sua faixa de IP — PowerShell como administrador:
 

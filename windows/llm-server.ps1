@@ -27,13 +27,28 @@
   bench    mede tokens/s reais nesta máquina
   vram     mostra o orçamento de VRAM por perfil
 
+.PARAMETER Lan
+  Serve o modelo para a rede local. Faz bind no IPv4 da interface física ativa
+  — e só nele. Sem esta flag o servidor escuta apenas em 127.0.0.1.
+
+  Não usa 0.0.0.0 de propósito: aquilo escutaria também em VPN corporativa,
+  Hyper-V, WSL e Tailscale. Se a interface não puder ser resolvida, o script
+  falha em vez de abrir tudo.
+
+  Abrir para a rede não basta: o firewall ainda precisa liberar a porta. E a
+  chave `local` do llama-server está publicada no repositório, sobre HTTP puro
+  — quem estiver na mesma rede lê seus prompts e usa sua GPU.
+
 .EXAMPLE
   .\llm-server.ps1 setup
   .\llm-server.ps1 start agent
+  .\llm-server.ps1 start agent -Lan
   .\llm-server.ps1 ask "Escreva um debounce genérico em TypeScript"
 
 .NOTES
   Requer: driver NVIDIA recente (nvidia-smi funcionando) e PowerShell 5.1+.
+  Este arquivo é gravado com BOM UTF-8: sem ele o PowerShell 5.1 lê os acentos
+  como ANSI e corrompe a saída. Não remova ao editar.
 #>
 
 [CmdletBinding()]
@@ -42,6 +57,12 @@ param(
     [ValidateSet('setup', 'start', 'stop', 'restart', 'status', 'logs', 'ask',
                  'models', 'pull', 'bench', 'vram', 'help')]
     [string]$Command = 'start',
+
+    # Serve o modelo para a rede local, fazendo bind no IP da interface física
+    # ativa — e só nele. Deliberadamente NÃO usa 0.0.0.0: aquilo escutaria
+    # também em VPN corporativa, Hyper-V, WSL e Tailscale, que é exposição que
+    # ninguém pediu. Leia o aviso em Get-LanIp antes de usar.
+    [switch]$Lan,
 
     [Parameter(Position = 1, ValueFromRemainingArguments = $true)]
     [string[]]$Rest
@@ -65,15 +86,74 @@ try {
     # Host sem console real (ISE, runspace embutido). Segue sem acento bonito.
 }
 
+# ─── endereço de rede ───────────────────────────────────────────────────────────
+# Resolve o IPv4 da interface física ativa — a que tem gateway padrão. Serve
+# para o -Lan fazer bind num endereço específico em vez de 0.0.0.0.
+#
+# Por que não 0.0.0.0: aquilo escuta em TODA interface, incluindo VPN
+# corporativa conectada, Hyper-V, WSL e Tailscale. Um bind num IP só limita a
+# exposição à rede que você realmente quis atender.
+#
+# AVISO, e ele vale mesmo com bind restrito: o llama-server serve HTTP puro com
+# `--api-key local` — uma chave que está publicada neste repositório. Não é
+# proteção nenhuma. Quem estiver na mesma rede lê seus prompts em texto claro e
+# consome sua GPU. Em rede doméstica é um risco que se aceita de olhos abertos;
+# em rede de escritório, compartilhada ou com convidados, use um túnel (SSH,
+# WireGuard) em vez de abrir a porta.
+function Get-LanIp {
+    # Adaptadores virtuais que NÃO servem como "a rede local".
+    $excluir = 'Hyper-V|Virtual|VMware|VirtualBox|WSL|Loopback|TAP-|Tailscale|WireGuard|VPN|Bluetooth'
+
+    if (-not (Get-Command Get-NetIPConfiguration -ErrorAction SilentlyContinue)) {
+        throw ('O cmdlet Get-NetIPConfiguration (modulo NetTCPIP) nao esta ' +
+               'disponivel neste host, entao -Lan nao consegue descobrir o IP. ' +
+               'Passe o endereco: $env:LLM_HOST = "192.168.3.51"')
+    }
+
+    $cfgs = @(
+        Get-NetIPConfiguration -ErrorAction Stop | Where-Object {
+            $_.IPv4DefaultGateway -and
+            $_.NetAdapter -and
+            $_.NetAdapter.Status -eq 'Up' -and
+            $_.InterfaceAlias -notmatch $excluir -and
+            $_.NetAdapter.InterfaceDescription -notmatch $excluir
+        }
+    )
+
+    # Menor métrica de interface = a rota que o Windows realmente prefere.
+    $escolhido = $cfgs |
+        Sort-Object { if ($_.NetIPv4Interface) { $_.NetIPv4Interface.InterfaceMetric } else { [int]::MaxValue } } |
+        Select-Object -First 1
+
+    if (-not $escolhido) {
+        # Falha FECHADA, de propósito. Cair para 0.0.0.0 aqui exporia o modelo
+        # em interfaces que o usuário nunca pediu — o oposto do que -Lan quer.
+        throw ('Nao encontrei interface fisica ativa com gateway padrao. ' +
+               'Passe o endereco explicitamente: $env:LLM_HOST = "192.168.3.51"')
+    }
+
+    $ip = @($escolhido.IPv4Address)[0].IPAddress
+    if (-not $ip) { throw "A interface '$($escolhido.InterfaceAlias)' nao tem IPv4." }
+    $ip
+}
+
 # ─── ajustes ──────────────────────────────────────────────────────────────────
 $Port           = if ($env:LLM_PORT) { [int]$env:LLM_PORT } else { 8080 }
-# Padrão só local. LLM_HOST='0.0.0.0' serve o modelo para a rede — útil para
-# atender outra máquina (ex.: um Mac sem RAM sobrando), mas leia o aviso:
-# `--api-key local` sobre HTTP puro não protege nada de quem está na mesma LAN.
-# Nesse caso, restrinja também o firewall à sua faixa de IP.
-$BindHost       = if ($env:LLM_HOST) { $env:LLM_HOST } else { '127.0.0.1' }
+# Padrão: só local. Duas formas de abrir para a rede, ambas explícitas —
+#   -Lan                      bind no IP da interface ativa (preferido)
+#   $env:LLM_HOST = '<ip>'    bind no endereço que você escolher
+# LLM_HOST aceita 0.0.0.0 se você insistir, mas leia o aviso em Get-LanIp.
+$BindHost       = if ($Lan) {
+    Get-LanIp
+} elseif ($env:LLM_HOST) {
+    $env:LLM_HOST
+} else {
+    '127.0.0.1'
+}
 # Endereço que ESTE script usa para falar com o servidor (health check, ask).
 # Com bind em 0.0.0.0, pedir http://0.0.0.0:8080 é frágil — sonde 127.0.0.1.
+# Com bind num IP específico, sonde esse IP: o servidor NÃO responde em
+# localhost nesse caso.
 $ProbeHost      = if ($BindHost -in @('0.0.0.0', '::', '*')) { '127.0.0.1' } else { $BindHost }
 $DefaultProfile = 'agent'
 
@@ -390,6 +470,22 @@ function Invoke-Start($name) {
     Write-Head "Subindo $($p.Name) em http://${BindHost}:$Port"
     Write-Dim "$($p.Repo):$($p.Quant) · ctx $($p.Ctx) · alias $($p.Name)"
 
+    # Exposição na rede é sempre anunciada. Silêncio aqui seria a forma mais
+    # fácil de alguém servir o modelo sem perceber.
+    if ($BindHost -ne '127.0.0.1' -and $BindHost -ne 'localhost') {
+        Write-Warn2 "Servindo na REDE em $BindHost — nao apenas nesta maquina."
+        Write-Dim   '    HTTP puro, e a chave `local` esta publicada no repo: quem'
+        Write-Dim   '    estiver na rede le seus prompts e usa sua GPU.'
+        if ($BindHost -in @('0.0.0.0', '::', '*')) {
+            Write-Warn2 '    0.0.0.0 escuta em TODA interface: VPN, Hyper-V, WSL, Tailscale.'
+            Write-Dim   '    Prefira -Lan, que faz bind so no IP da rede local.'
+        }
+        Write-Dim   '    O firewall ainda precisa liberar a porta, restrita a sua faixa:'
+        Write-Dim   "    New-NetFirewallRule -DisplayName 'llama-server LAN' -Direction Inbound ``"
+        Write-Dim   "      -Protocol TCP -LocalPort $Port -Action Allow -Profile Private ``"
+        Write-Dim   '      -RemoteAddress 192.168.3.0/24'
+    }
+
     # -ngl 999  manda todas as camadas para a VRAM (o llama.cpp reduz se nao couber)
     # -ctk/-ctv q8_0  corta o cache KV pela metade: e o que faz 16k de contexto
     #                 caber em 8 GB junto com o modelo
@@ -554,8 +650,15 @@ function Invoke-Help {
   pull <perfil>    so baixa os pesos
   bench            mede tokens/s reais aqui
   vram             orcamento de VRAM por perfil
+
+Rede:
+  -Lan             serve para a rede local, com bind so no IP desta maquina
+                   (o padrao e 127.0.0.1: nada sai desta maquina)
 '@ | Write-Host
     Write-Dim "Porta: $Port (altere com `$env:LLM_PORT=8081) · escuta so em $BindHost"
+    if ($BindHost -eq '127.0.0.1') {
+        Write-Dim 'Para atender outra maquina: .\llm-server.ps1 start agent -Lan'
+    }
 }
 
 # ─── entrada ──────────────────────────────────────────────────────────────────

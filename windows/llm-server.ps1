@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   llm-server — LLM local servido em HTTP (API compatível com OpenAI) no Windows,
   via llama.cpp com CUDA.
@@ -49,6 +49,21 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+
+# ─── encoding ───────────────────────────────────────────────────────────────────
+# Este arquivo tem BOM UTF-8 de propósito. O Windows PowerShell 5.1 lê .ps1 SEM
+# BOM como ANSI (Windows-1252), e cada acento deste script viraria dois
+# caracteres de lixo. Não remova o BOM ao editar — e não confunda com o
+# config.yaml do Continue, que exige o contrário.
+#
+# O BOM resolve a LEITURA do arquivo. A ESCRITA no console é outro problema: sem
+# isto, um console em cp850 imprime lixo mesmo com o script lido corretamente.
+try {
+    [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+    $OutputEncoding = [Console]::OutputEncoding
+} catch {
+    # Host sem console real (ISE, runspace embutido). Segue sem acento bonito.
+}
 
 # ─── ajustes ──────────────────────────────────────────────────────────────────
 $Port           = if ($env:LLM_PORT) { [int]$env:LLM_PORT } else { 8080 }

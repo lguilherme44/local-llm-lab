@@ -224,6 +224,33 @@ Este bug esteve no `llm-server.command`: os perfis com flags extras (`agent`, `q
 
 **`read` sem TTY recebe EOF na hora.** Um script com confirmação interativa cancela sozinho quando rodado por pipe ou por um agente. Detecte com `[[ ! -t 0 ]]` e ofereça uma flag `--yes`.
 
+**`.ps1` precisa de BOM; `.yaml` e `.json` não podem ter.** A regra é oposta para cada um, e trocá-las quebra os dois.
+
+O Windows PowerShell 5.1 — o `powershell.exe` que já vem no Windows — lê arquivo `.ps1` **sem** BOM como ANSI (Windows-1252). Todo caractere UTF-8 multibyte do script (`á`, `é`, `—`, `─`) chega ao parser como dois caracteres de lixo. Em comentário, o resultado é feio; dentro de uma string exibida, a saída fica ilegível. O PowerShell 7+ (`pwsh.exe`) assume UTF-8 sem BOM e não sofre disso — o que torna o bug invisível para quem só testa no 7.
+
+Por isso os `.ps1` deste repositório são gravados **com** BOM, e o `llm-server.ps1` fixa o encoding de saída no topo:
+
+```powershell
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+$OutputEncoding = [Console]::OutputEncoding
+```
+
+São dois problemas distintos, e resolver um não resolve o outro: o BOM conserta a **leitura** do arquivo; o `OutputEncoding` conserta a **escrita** no console. Um console em cp850 imprime lixo mesmo lendo o script perfeitamente.
+
+Já os arquivos de configuração que o `llm-clients-setup.ps1` gera (`config.yaml` do Continue, `models.json` do `pi`) precisam do contrário — o parser YAML engasga com BOM. O script escreve assim, de propósito:
+
+```powershell
+[IO.File]::WriteAllText($path, $content, (New-Object Text.UTF8Encoding $false))
+```
+
+Evite `Set-Content -Encoding UTF8` para esses: no PowerShell 5.1 esse comando **adiciona** BOM. No 7+ não. Mesmo comando, resultado diferente por versão — é a razão de o script usar `WriteAllText` diretamente.
+
+Se você editar um `.ps1` e os acentos começarem a sair errados, o primeiro suspeito é o editor ter salvado sem BOM. Confirme com:
+
+```powershell
+Format-Hex .\windows\llm-server.ps1 -Count 3   # deve começar com EF BB BF
+```
+
 ---
 
 ## Quando nada acima explica

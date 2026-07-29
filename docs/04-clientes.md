@@ -139,6 +139,36 @@ Mas confirme que a soma dos dois modelos cabe na sua memória antes.
 
 ---
 
+## Omnigent (Meta-harness)
+
+O [Omnigent](https://github.com/omnigent-ai/omnigent) é um orquestrador de agentes. Ele não é uma engine de inferência (como o llama.cpp), mas um cliente avançado que permite rodar múltiplos agentes colaborando na mesma sessão.
+
+### Como configurar
+
+Crie um arquivo `agent.yaml` para definir o seu agente apontando para o servidor local:
+
+```yaml
+name: meu-agente-local
+prompt: |
+  Você é um assistente focado e direto, usando o LLM local.
+
+executor:
+  harness: openai-agents
+  model: mlx-community/Qwen3-8B-4bit  # substitua pelo alias do seu modelo
+```
+
+Rode o Omnigent apontando para a nossa API:
+
+```bash
+export OPENAI_BASE_URL=http://127.0.0.1:8080/v1
+export OPENAI_API_KEY=local
+omnigent run agent.yaml
+```
+
+**A grande sacada:** Com o Omnigent, você pode ter o `Qwen3` local editando arquivos usando as ferramentas dele e, no mesmo `agent.yaml`, declarar um sub-agente `revisor` usando uma API externa (ex: Claude 3.5) para validar o código gerado pelo modelo local.
+
+---
+
 ## Outros clientes
 
 Qualquer coisa que aceite `OPENAI_BASE_URL` funciona: Aider, Cline, Zed, os SDKs oficiais. Dois pontos a lembrar:

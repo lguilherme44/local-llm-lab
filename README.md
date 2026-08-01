@@ -59,6 +59,7 @@ windows/
   llm-clients-setup.ps1   configura pi e Continue
 scripts/
   test-tools.py           valida se um modelo faz tool calling de verdade
+  test-feature.py         valida se ele ENTREGA uma feature — criterio e o pytest
   check-links.py          confere links e âncoras desta documentação
 ```
 

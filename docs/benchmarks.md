@@ -239,6 +239,48 @@ O `Qwen2.5-Coder` foi testado nos **dois** engines de propósito: com o mesmo re
 
 ---
 
+## Teste de feature: quando o benchmark e a entrega discordam
+
+Todas as medidas acima são de *capacidade*: tokens por segundo, ciclo de tool calling, memória. Nenhuma responde a pergunta que decide se vale trabalhar com o modelo — **ele termina a tarefa?**
+
+**Método:** `scripts/test-feature.py`. Um `Cache` aceita `ttl` em `set()` e `default_ttl` no construtor mas ignora os dois; seis testes cobrem a expiração e falham. O modelo recebe quatro ferramentas (`list_files`, `read_file`, `write_file`, `run_tests`) e o pedido de fazer a suíte passar. Teto de 14 turnos. `test_cache.py` é somente leitura no harness — sem isso o caminho mais curto para o verde é apagar os testes.
+
+O critério não é heurística de texto nem julgamento: é o `pytest`.
+
+| perfil | modelo | resultado | tempo | turnos | reescritas |
+|---|---|---|---|---|---|
+| `moe` | Qwen3-Coder-30B-A3B | **APROVADO** | 46 s | 2 | 1 |
+| — | Qwen3.6-35B-A3B | APROVADO | 176 s | 3 | 1 |
+| `agent` | Qwen3-8B | **REPROVADO** | 31 s | 14 (teto) | 6 |
+
+**Sobre o tempo, uma ressalva que vale mais que a coluna:** os 46 s do `moe` são com o cache de páginas quente. A mesma execução logo após reiniciar o servidor levou **352 s** — 7,6× — tomando exatamente as mesmas decisões: 2 turnos, mesma sequência de ferramentas, os mesmos 562 tokens gerados. A `temperature 0` dá reprodutibilidade de comportamento; o relógio depende de quanto do modelo está residente. Compare turnos e reescritas entre modelos; compare tempo só dentro da mesma condição de cache.
+
+**As duas medidas apontam para lados opostos, e é esse o ponto da seção.** Pelo benchmark de geração o `agent` ganha de longe: 72,5 tok/s contra 24,4, e terminou a sessão em menos tempo de parede. Pelo teste de feature ele é o único que não entrega. Gastou os 14 turnos, reescreveu o arquivo seis vezes, rodou os testes cinco — e saiu com código quebrado.
+
+O bug dele merece registro porque é instrutivo:
+
+```python
+if expiration_time is not None and time.time() < expiration_time:
+    return value
+else:
+    del self._data[key]      # cai aqui quando NÃO existe TTL
+    return default
+```
+
+Sem TTL, `expiration_time` é `None`, a condição é falsa, e o `else` **apaga o valor no primeiro `get`** — quebrando justamente o teste mais simples da suíte, o de valor que deveria persistir para sempre. O modelo viu esse teste falhar cinco vezes e reescreveu em volta dele todas as vezes. De quebra deixou `ttl or self.default_ttl`, que trata `ttl=0` como ausente, e não tocou no `__len__`.
+
+Os dois MoE escreveram código equivalente e correto, com uma diferença de gosto no `__len__`: o `moe` conta sem mutar, o Qwen3.6 apaga os expirados como efeito colateral de `len()`. O segundo faz coleta de lixo de graça, mas `len(c)` alterando o container é surpresa escondida — a versão pura é mais defensável. Ambos usam `time.time()` em vez de `time.monotonic()`: passam nos testes e ficam frágeis se o relógio do sistema recuar.
+
+**O que esta seção não prova.** Uma tarefa é um ponto. O resultado mostra que o 30B-A3B é suficiente e que o 8B não é *nesta* tarefa — não estabelece ordem geral de qualidade, e em particular não diz que o `moe` supera o Qwen3.6, que empatou gastando 3,8× mais tempo. Para isso seria preciso um conjunto de tarefas, o que não temos.
+
+**O que ela prova, e generaliza:** tok/s e ciclo de tool calling não predizem entrega. Um modelo pode passar em `test-tools.py`, ser o mais rápido da bancada, e ainda assim não fechar uma feature de trinta linhas. Antes de adotar um perfil como agente, rode a tarefa real.
+
+```bash
+uv run --with pytest scripts/test-feature.py moe --host 192.168.3.51
+```
+
+---
+
 ## Teste de agente de ponta a ponta
 
 Além do teste sintético, uma tarefa real com o `pi`:
@@ -303,6 +345,9 @@ E de outra máquina da rede, contra o servidor da Máquina B:
 
 ```bash
 LLM_HOST=192.168.3.51 python3 scripts/test-tools.py agent
+
+# e a tarefa real, que e a que decide
+uv run --with pytest scripts/test-feature.py moe --host 192.168.3.51
 ```
 
 Se seus números divergirem muito, verifique nesta ordem: RAM livre, swap, e se o modelo cabe. Quase toda divergência grande vem daí — não do modelo.

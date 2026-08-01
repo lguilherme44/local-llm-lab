@@ -266,13 +266,22 @@ $Profiles = @(
     # --n-cpu-moe N mantém os tensores de expert das N primeiras camadas na RAM
     # do sistema. As demais ficam na VRAM junto com atenção, embeddings e KV.
     #
-    # O ctx é 16384 e NÃO 32768, apesar do KV baratíssimo, porque nesta máquina
-    # o orçamento total é que aperta — e pesos são pesos, esteja na VRAM ou na
-    # RAM. Medido com tudo fechado: 6,76 GB de VRAM livre + 8,51 GB de RAM
-    # disponível = 15,27 GB. O modelo pede 12,9 de peso mais buffers, então:
-    #   ctx 32k -> 12,9 + 1,5 (KV) + 0,9 (buffers) = 15,3  NAO CABE
-    #   ctx 16k -> 12,9 + 0,75      + 0,9          = 14,55 cabe, ~0,7 de folga
-    # Subir para 32k exige mais RAM na maquina, nao um --n-cpu-moe diferente.
+    # O ctx é 32768, e a conta de por que cabe importa mais que o número.
+    #
+    # A primeira versão deste perfil usava 16384, com base num erro: somar VRAM
+    # e RAM num orçamento único e concluir que 32k estouraria por 30 MB. Está
+    # errado porque o cache KV NÃO vai para onde vão os experts — ele fica na
+    # VRAM, e ali sobra espaço justamente porque os experts saíram de lá.
+    #
+    # Medido com o modelo carregado: 5,2 GB de VRAM em uso dos 8. O KV custa
+    # 48 KB/token em q8_0, então dobrar 16k -> 32k acrescenta ~0,8 GB e leva a
+    # VRAM para ~6,0 GB. A RAM não é tocada. O sintoma que denunciou o erro foi
+    # um cliente com system prompt grande batendo em
+    #   "request (23334 tokens) exceeds the available context size (16384)".
+    #
+    # O teto real do contexto aqui é a VRAM livre, não a RAM: cada 16k a mais
+    # custa ~0,8 GB de VRAM. Para ir além, baixe o --n-cpu-moe é o CONTRÁRIO do
+    # que ajuda — aquilo traz experts para a VRAM e come o espaço do KV.
     #
     # Ajuste N pela sua folga: DIMINUIR N traz experts de volta para a GPU e
     # acelera, até a VRAM encostar em ~7,5 GB. AUMENTAR alivia a RAM. Se a
@@ -288,7 +297,7 @@ $Profiles = @(
     # raciocinio, entao nao ha o que desligar — diferente dos dois Qwen3 base.
     [pscustomobject]@{
         Name = 'moe'; Repo = 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF'; Quant = 'UD-Q3_K_XL'
-        FileGB = 12.9; Ctx = 16384; VramGB = 5.2; RamGB = 9.7; CpuMoe = 40; Tools = $true
+        FileGB = 12.9; Ctx = 32768; VramGB = 6.0; RamGB = 9.7; CpuMoe = 40; Tools = $true
         File = 'Qwen3-Coder-30B-A3B-Instruct-UD-Q3_K_XL.gguf'
         ExtraArgs = @()
         Desc = 'Qwen3-Coder 30B-A3B (MoE, 3B ativos). Tool calling validado (ciclo completo). 24,4 tok/s de geracao mas 595 de prefill: gera 3x mais devagar que o 8B e faz prefill 1,5x mais rapido. Sobe com ~0,2 GB de RAM livre — feche o navegador.'

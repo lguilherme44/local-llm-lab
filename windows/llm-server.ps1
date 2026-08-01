@@ -404,7 +404,14 @@ function Start-Detached([string]$exe, [string[]]$serverArgs) {
     $acao = New-ScheduledTaskAction -Execute 'cmd.exe' `
         -Argument "/c `"`"$exe`" $linha > `"$LogFile`" 2> `"$LogFile.err`"`""
 
-    $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" `
+    # UserId pelo SID, não por nome. Duas razões, ambas medidas nesta máquina:
+    # sob SSH o $env:USERDOMAIN vem 'WORKGROUP' enquanto a conta real é
+    # 'DESKTOP-XXXX\Admin', e o Agendador rejeita com "não foi feito mapeamento
+    # entre os nomes de conta e as identificações de segurança" — a mesma
+    # mensagem que o icacls dá em Windows pt-BR ao receber 'Administrators'.
+    # SID não tem tradução nem depende de como a sessão foi aberta.
+    $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    $principal = New-ScheduledTaskPrincipal -UserId $sid `
         -LogonType Interactive -RunLevel Limited
 
     # ExecutionTimeLimit 0 = sem limite. O padrão do Agendador é matar a tarefa

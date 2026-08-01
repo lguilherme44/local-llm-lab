@@ -46,6 +46,18 @@
   chave `local` do llama-server está publicada no repositório, sobre HTTP puro
   — quem estiver na mesma rede lê seus prompts e usa sua GPU.
 
+.PARAMETER Detached
+  Sobe o servidor via Agendador de Tarefas, fora da sessão atual, para ele
+  sobreviver ao fechamento do terminal.
+
+  Ligado automaticamente sob SSH. Ali não é conveniência: o Windows põe a
+  sessão num job object e o derruba no logout, matando o servidor — depois de
+  o `start` já ter reportado sucesso, porque o health check passa antes.
+
+  A tarefa roda com LogonType Interactive, na sessão do usuário logado, que é
+  o que dá acesso normal à GPU. Como contrapartida, exige alguém logado na
+  máquina: sem sessão, a tarefa é criada mas não inicia.
+
 .EXAMPLE
   .\llm-server.ps1 setup
   .\llm-server.ps1 start agent
@@ -70,6 +82,13 @@ param(
     # também em VPN corporativa, Hyper-V, WSL e Tailscale, que é exposição que
     # ninguém pediu. Leia o aviso em Get-LanIp antes de usar.
     [switch]$Lan,
+
+    # Sobe o servidor fora desta sessão, via Agendador de Tarefas, para ele
+    # sobreviver ao fechamento do terminal. LIGADO AUTOMATICAMENTE quando o
+    # script roda por SSH — ali não é conveniência, é necessidade: o Windows
+    # derruba o process tree da sessão no logout e o servidor morreria junto,
+    # depois de o `start` já ter reportado sucesso. Veja Start-Detached.
+    [switch]$Detached,
 
     [Parameter(Position = 1, ValueFromRemainingArguments = $true)]
     [string[]]$Rest
@@ -163,6 +182,13 @@ $BindHost       = if ($Lan) {
 # localhost nesse caso.
 $ProbeHost      = if ($BindHost -in @('0.0.0.0', '::', '*')) { '127.0.0.1' } else { $BindHost }
 $DefaultProfile = 'agent'
+
+# Por SSH, destacar não é opção — é a única forma do servidor sobreviver. O
+# sshd põe a sessão num job object e mata tudo no logout. Sem isto, `start`
+# reporta sucesso e o servidor morre junto com o comando que o subiu.
+if (-not $Detached -and $env:SSH_CONNECTION) {
+    $Detached = $true
+}
 
 $Root    = Join-Path $env:LOCALAPPDATA 'llm-server'
 $BinDir  = Join-Path $Root 'llama.cpp'
@@ -348,6 +374,63 @@ function Get-RamInfo {
             FreeGB  = [math]::Round($os.FreePhysicalMemory / 1MB, 1)
         }
     } catch { $null }
+}
+
+# Sobe o servidor FORA da sessão atual, via Agendador de Tarefas.
+#
+# O problema que isto resolve: um processo iniciado por SSH morre quando a
+# sessão fecha. O Windows põe a sessão inteira num job object e derruba o job
+# no logout — filho de Start-Process vai junto. Pior, isso é invisível: o
+# health check do `start` passa antes de a sessão terminar, o script reporta
+# "no ar", e o servidor já morreu quando você volta.
+#
+# O Agendador é o caminho limpo porque o serviço dele é quem cria o processo:
+# nasce fora do nosso job object. E com LogonType Interactive ele roda na
+# sessão do usuário logado — o que a CUDA precisa. Rodar como SYSTEM ou com S4U
+# colocaria o processo na sessão 0, sem acesso normal à GPU.
+#
+# Requer o usuário logado localmente na máquina. Se não estiver, a tarefa fica
+# pronta mas não inicia — é a contrapartida de manter o acesso à GPU.
+function Start-Detached([string]$exe, [string[]]$serverArgs) {
+    $nome = 'llm-server'
+
+    # Argumentos com espaço (caminhos) precisam de aspas na linha do Agendador.
+    $linha = ($serverArgs | ForEach-Object {
+        if ($_ -match '\s') { '"' + $_ + '"' } else { $_ }
+    }) -join ' '
+
+    # cmd /c faz o redirecionamento: a ação do Agendador não tem os parâmetros
+    # -RedirectStandard* do Start-Process, e sem log não há como diagnosticar.
+    $acao = New-ScheduledTaskAction -Execute 'cmd.exe' `
+        -Argument "/c `"`"$exe`" $linha > `"$LogFile`" 2> `"$LogFile.err`"`""
+
+    $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" `
+        -LogonType Interactive -RunLevel Limited
+
+    # ExecutionTimeLimit 0 = sem limite. O padrão do Agendador é matar a tarefa
+    # em 3 dias, o que num servidor residente seria uma queda inexplicável.
+    $cfg = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
+        -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) `
+        -MultipleInstances IgnoreNew
+
+    Unregister-ScheduledTask -TaskName $nome -Confirm:$false -EA SilentlyContinue
+    Register-ScheduledTask -TaskName $nome -Action $acao -Principal $principal `
+        -Settings $cfg -Description 'llama-server residente (local-llm-lab)' | Out-Null
+    Start-ScheduledTask -TaskName $nome
+
+    # O Agendador retorna assim que dispara; o processo aparece um instante
+    # depois. Precisamos do PID dele, não do da tarefa.
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    while ($sw.Elapsed.TotalSeconds -lt 30) {
+        $proc = Get-Process llama-server -EA SilentlyContinue |
+                Sort-Object StartTime -Descending | Select-Object -First 1
+        if ($proc) {
+            Write-Dim "destacado via Agendador de Tarefas (tarefa '$nome', PID $($proc.Id))"
+            return $proc.Id
+        }
+        Start-Sleep -Milliseconds 500
+    }
+    $null
 }
 
 function Get-ServerProcess {
@@ -740,12 +823,21 @@ function Invoke-Start($name) {
         Write-Dim "flags do perfil: $($p.ExtraArgs -join ' ')"
     }
 
-    $proc = Start-Process -FilePath $exe -ArgumentList $serverArgs -PassThru -NoNewWindow `
-                          -RedirectStandardOutput $LogFile -RedirectStandardError "$LogFile.err"
-    $proc.Id  | Set-Content $PidFile
-    $p.Name   | Set-Content $ProfFile
+    if ($Detached) {
+        $procId = Start-Detached $exe $serverArgs
+        if (-not $procId) {
+            Write-Err2 'A tarefa agendada subiu mas nenhum llama-server apareceu.'
+            Get-Content "$LogFile.err" -Tail 20 -ErrorAction SilentlyContinue
+            exit 1
+        }
+    } else {
+        $procId = (Start-Process -FilePath $exe -ArgumentList $serverArgs -PassThru -NoNewWindow `
+                                 -RedirectStandardOutput $LogFile -RedirectStandardError "$LogFile.err").Id
+    }
+    $procId  | Set-Content $PidFile
+    $p.Name  | Set-Content $ProfFile
 
-    $r = Wait-Ready $proc.Id $p.Name
+    $r = Wait-Ready $procId $p.Name
     switch ($r) {
         'died' {
             Write-Err2 'O servidor morreu ao subir. Ultimas linhas:'
@@ -753,7 +845,7 @@ function Invoke-Start($name) {
             Remove-Item $PidFile, $ProfFile -ErrorAction SilentlyContinue
             exit 1
         }
-        'timeout' { Write-Warn2 "Sem resposta no tempo limite. Processo vivo (PID $($proc.Id)). Veja: .\llm-server.ps1 logs" }
+        'timeout' { Write-Warn2 "Sem resposta no tempo limite. Processo vivo (PID $procId). Veja: .\llm-server.ps1 logs" }
         default {
             Write-Ok "No ar em ${r}s — http://${BindHost}:$Port"
             Show-Usage $p
@@ -785,6 +877,19 @@ function Show-Usage($p) {
 
 function Invoke-Stop {
     $proc = Get-ServerProcess
+
+    # Fallback pelo nome do processo: com -Detached o PID no arquivo veio de uma
+    # busca, e um `stop` de outra sessão (ou depois de perder o PidFile) não
+    # pode deixar 5 GB de VRAM presos só porque não achou o bilhete.
+    if (-not $proc) {
+        $proc = Get-Process llama-server -EA SilentlyContinue | Select-Object -First 1
+        if ($proc) { Write-Dim "PID nao registrado; achei o llama-server pelo nome." }
+    }
+
+    # A tarefa agendada some junto: deixá-la registrada faria o servidor
+    # ressuscitar no próximo Start-ScheduledTask acidental, e polui o Agendador.
+    Unregister-ScheduledTask -TaskName 'llm-server' -Confirm:$false -EA SilentlyContinue
+
     if ($proc) {
         Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
         Start-Sleep -Milliseconds 700
@@ -949,6 +1054,12 @@ MoE:
 Rede:
   -Lan             serve para a rede local, com bind so no IP desta maquina
                    (o padrao e 127.0.0.1: nada sai desta maquina)
+
+Sessao:
+  -Detached        sobe via Agendador de Tarefas, para o servidor sobreviver ao
+                   fechamento do terminal. Automatico quando o script roda por
+                   SSH, onde o processo morreria junto com a sessao.
+                   Exige o usuario logado na maquina (a CUDA precisa da sessao).
 '@ | Write-Host
     Write-Dim "Porta: $Port (altere com `$env:LLM_PORT=8081) · escuta so em $BindHost"
     if ($BindHost -eq '127.0.0.1') {

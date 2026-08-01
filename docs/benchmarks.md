@@ -175,6 +175,29 @@ E um download truncado em 18,5 MB (de 12,9 GB) que carregou até `blk.47.ffn_up_
 
 **A estimativa que precedeu a medição errou em tudo menos no sinal.** Previu 15–22 tok/s (foram 24,4), VRAM de 6,5 GB (foram 5,2) e 32k de contexto (não coube). O raciocínio — MoE tolera offload, banda de RAM é o teto — apontava a direção certa; os números, não. Vale como lembrete de que estimativa fundamentada continua sendo estimativa.
 
+### Onde o offload de MoE para de funcionar
+
+O `moe` cabe. A pergunta seguinte é até onde a técnica escala — e a resposta veio de testar o **Qwen3.6-35B-A3B** (MXFP4_MOE, 20,2 GB) na mesma máquina. Mesma família de arquitetura, mesmo `--n-cpu-moe`, 8k de contexto para dar a melhor chance possível.
+
+| | `moe` — Qwen3-Coder-30B-A3B (12,9 GB) | Qwen3.6-35B-A3B (20,2 GB) |
+|---|---|---|
+| geração | **24,4 tok/s** | 9,7 tok/s |
+| prefill | **595 tok/s** | **45,1 tok/s** |
+| tool calling | ✅ | ✅ |
+| page faults do processo | — | **7,7 milhões** |
+
+Os dois funcionam e os dois passam no teste de agente. Mas **o prefill é 13× pior**, e é o prefill que decide: um prompt de 1.820 tokens leva **40 segundos** só para ser lido. Num loop agêntico, onde o contexto é reprocessado a cada turno, nenhuma vantagem de qualidade paga isso.
+
+A causa não é o modelo, é aritmética: 20,2 GB de pesos contra 15,3 GB de orçamento. Os 7,7 milhões de page faults são a diferença batendo no SSD. **O offload de MoE compra folga, não memória infinita** — ele deixa você usar VRAM + RAM em vez de só VRAM, e acaba exatamente quando a soma das duas acaba.
+
+Vale registrar que a geração cai menos que o prefill (2,5× contra 13×). Faz sentido: gerar toca poucos experts por vez e o cache de páginas absorve parte; o prefill processa o prompt inteiro em lote e varre experts que não estão residentes.
+
+**Duas armadilhas encontradas ao subir este modelo:**
+
+O primeiro teste de tool calling **reprovou por erro de método**: `tool_calls: null` com `content` vazio. Não era o modelo — era `--reasoning off` faltando na linha de comando, porque o servidor foi subido à mão em vez de por perfil. É a mesma falha silenciosa que a seção anterior documenta, encontrada de novo por quem a tinha escrito. Com a flag, aprovou.
+
+E o caminho `snapshots\<rev>\modelo.gguf` do cache do Hugging Face é um **symlink** que o `llama.cpp` não segue no Windows — falha em 0,25 s com "failed to load model", que parece corrupção de arquivo. Só carrega apontando para `blobs\<sha>`.
+
 ---
 
 ## Prompt cache: o ganho de 25×

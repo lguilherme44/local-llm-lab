@@ -195,6 +195,59 @@ Uma versão anterior do `clean.sh` relatava quase nada por isso. Havia 13 GB.
 
 ---
 
+## O servidor morre sozinho depois que fecho o terminal
+
+Se você subiu por SSH, ele não morreu depois — morreu **junto**. O Windows põe cada sessão num job object e derruba o job no logout, levando os filhos. E o `start` reporta sucesso porque o health check passa antes de a sessão terminar, então o sintoma aparece só quando você volta.
+
+O `-Detached` resolve, subindo pelo Agendador de Tarefas — o serviço dele cria o processo, que nasce fora do nosso job object:
+
+```powershell
+.\llm-server.ps1 start moe -Lan -Detached
+```
+
+Sob SSH isso liga sozinho (o script checa `$env:SSH_CONNECTION`), porque ali não é preferência.
+
+**A tarefa exige alguém logado na máquina.** Ela roda com `LogonType Interactive`, na sessão do usuário, e é isso que dá acesso normal à GPU — `SYSTEM` ou `S4U` cairiam na sessão 0. Sem sessão aberta, a tarefa é criada mas não inicia.
+
+Para inspecionar ou limpar à mão:
+
+```powershell
+Get-ScheduledTask -TaskName llm-server | Select-Object State
+.\llm-server.ps1 stop      # derruba o processo E desregistra a tarefa
+```
+
+### Erros de conta ao registrar a tarefa
+
+> Não foi feito mapeamento entre os nomes de conta e as identificações de segurança
+
+Nome de conta que o sistema não resolve. Duas causas comuns, e **a solução das duas é usar SID**:
+
+- Sob SSH, `$env:USERDOMAIN` pode vir `WORKGROUP` enquanto a conta real é `DESKTOP-XXXX\Admin`.
+- Em Windows **pt-BR**, grupos internos são traduzidos: `Administrators` não existe, é `Administradores`.
+
+SID não tem tradução nem depende de como a sessão foi aberta:
+
+```powershell
+[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value   # o seu
+icacls $arquivo /inheritance:r /grant '*S-1-5-32-544:F' /grant '*S-1-5-18:F'
+```
+
+`*S-1-5-32-544` é Administrators e `*S-1-5-18` é SYSTEM, em qualquer idioma. Pela mesma razão, `Get-Counter '\Memory\Available MBytes'` falha em pt-BR — nomes de contador também são traduzidos. Use `Get-CimInstance Win32_PerfRawData_PerfOS_Memory`.
+
+---
+
+## O modelo não carrega e a mensagem sugere corrupção
+
+> error loading model: tensor '...' data is not within the file bounds, model is corrupted or incomplete
+
+Duas causas distintas, e a mensagem é a mesma:
+
+**Download truncado.** Compare o tamanho em bytes com o `content-length` do Hugging Face — não confie no "parece que baixou tudo". Faltando 18,5 MB de 12,9 GB, o modelo carrega até a última camada antes de falhar. `curl -C -` retoma de onde parou.
+
+**Caminho de symlink.** O cache do Hugging Face guarda o arquivo em `blobs\<sha>` e cria um link em `snapshots\<rev>\nome.gguf`. No Windows o `llama.cpp` não segue esse link: falha em ~0,25 s, o que já é uma pista — corrupção real falha depois de ler bastante coisa. Aponte para o `blobs\<sha>`.
+
+---
+
 ## Armadilhas de shell (se você for editar os scripts)
 
 Duas que morderam mais de uma vez:

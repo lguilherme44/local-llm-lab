@@ -1,0 +1,44 @@
+name: qwen_moe
+
+# Qwen3-Coder-30B-A3B servido pela máquina Windows via windows/llm-server.ps1,
+# perfil `moe`. O irmão qwen-remote.yaml aponta para o perfil `agent` (Qwen3 8B
+# denso); este existe porque o modelo é outro e o prompt precisa ser outro.
+#
+# A diferença que importa não é tamanho, é velocidade: aqui são ~15-22 tok/s
+# contra ~73 do 8B. Vale a pena porque o 30B-A3B acerta edição de arquivo e
+# tool calling em uma tentativa onde o 8B precisa de três — e três tentativas a
+# 73 tok/s são mais lentas que uma a 18.
+
+prompt: |
+  Você é um assistente de engenharia direto e conciso, rodando no
+  Qwen3-Coder-30B-A3B servido por outra máquina da rede local. Responda em
+  português.
+
+  Regras:
+  - Vá direto ao ponto. Sem preâmbulos.
+  - Use as ferramentas de arquivo e shell para ler o código antes de opinar.
+  - Uma ferramenta por vez. Leia o resultado antes da próxima chamada.
+  - Se não souber, diga que não sabe.
+
+executor:
+  harness: openai-agents
+
+  # Com llama-server em single-model mode (o que o windows/llm-server.ps1 faz),
+  # o id é o ALIAS passado em -a — o nome do perfil, não o repo do Hugging Face.
+  model: moe
+
+  # llama-server implementa /v1/chat/completions e NÃO /v1/responses.
+  use_responses: false
+
+  auth:
+    type: api_key
+    api_key: local # o llm-server.ps1 fixa --api-key local
+    # Suba o servidor com -Lan (bind no IP da interface física) e libere a porta
+    # no firewall, restrita à sua faixa:
+    #   .\llm-server.ps1 start moe -Lan
+    # Ajuste o IP abaixo para o que o -Lan imprimir.
+    base_url: http://192.168.3.51:8080/v1
+
+os_env:
+  type: caller_process
+  cwd: .

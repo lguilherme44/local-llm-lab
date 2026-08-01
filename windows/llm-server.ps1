@@ -10,9 +10,16 @@
 
   Hardware alvo: RTX 3060 Ti (8 GB VRAM), 16 GB RAM, SSD 1 TB.
 
-  O limite real aqui é a VRAM, não a RAM. Os 8 GB da 3060 Ti definem tudo:
-  o modelo mais o cache KV precisam caber, senão camadas vazam para a CPU e a
-  velocidade cai por um fator grande. Os perfis abaixo já respeitam esse teto.
+  Para os modelos DENSOS o limite é a VRAM, não a RAM: os 8 GB da 3060 Ti
+  definem tudo, porque o modelo mais o cache KV precisam caber ou camadas vazam
+  para a CPU e a velocidade cai por um fator grande.
+
+  O perfil `moe` é a exceção deliberada, e vale entender por quê. Num MoE só
+  uma fração dos parâmetros é lida por token — no Qwen3-Coder-30B-A3B, 8 de 128
+  experts. Manter experts na RAM do sistema deixa de ser desastre e vira
+  arquitetura: a atenção, que é lida sempre, fica na VRAM; os experts, lidos
+  raramente, ficam na RAM. É isso que faz uma 3060 Ti de 8 GB servir um modelo
+  de 30 B. Ali o orçamento é VRAM E RAM, e o `vram` mostra os dois.
 
 .PARAMETER Command
   setup    baixa e instala o llama.cpp com CUDA em %LOCALAPPDATA%\llm-server
@@ -191,7 +198,15 @@ $Headers = @{ 'Content-Type' = 'application/json'; 'Authorization' = "Bearer $Ap
 # ExtraArgs = flags que só fazem sentido para aquele modelo. Todo perfil declara
 # o campo, mesmo vazio: sob Set-StrictMode, ler propriedade ausente de um
 # pscustomobject é erro — a mesma armadilha do campo opcional que derrubou os
-# perfis sem flags no lado macOS (veja docs/06-troubleshooting.md).
+# perfis sem flags no lado macOS (veja docs/06-troubleshooting.md). Vale igual
+# para CpuMoe e RamGB, adicionados depois: TODO perfil declara os dois.
+#
+# CpuMoe = quantas das 48 camadas têm os tensores de expert mantidos na RAM do
+# sistema em vez da VRAM (flag --n-cpu-moe). Só faz sentido em modelo MoE; nos
+# densos é 0. Ver o comentário do perfil `moe` para o porquê.
+#
+# RamGB = RAM do SISTEMA que o processo precisa além da VRAM. Nos perfis densos
+# é quase nada (o peso todo vai para a GPU); no `moe` é o número que manda.
 #
 # --reasoning off nos dois Qwen3: eles pensam por padrão, e o raciocínio consome
 # a cota de max_tokens ANTES de gerar resposta. Um cliente que peça poucos
@@ -203,25 +218,53 @@ $Headers = @{ 'Content-Type' = 'application/json'; 'Authorization' = "Bearer $Ap
 $Profiles = @(
     [pscustomobject]@{
         Name = 'agent'; Repo = 'Qwen/Qwen3-8B-GGUF'; Quant = 'Q4_K_M'
-        FileGB = 5.03; Ctx = 16384; VramGB = 6.24; Tools = $true
+        FileGB = 5.03; Ctx = 16384; VramGB = 6.24; RamGB = 0.5; CpuMoe = 0; Tools = $true
         ExtraArgs = @('--reasoning', 'off')
         Desc = 'Qwen3 8B. Tool calling validado (ciclo completo). ~73 tok/s de geracao e ~400 de prefill nesta 3060 Ti. Padrao.'
     },
+    # O único MoE da lista, e o único perfil que quebra a regra "tem de caber na
+    # VRAM". Ele pode quebrá-la porque é MoE: dos 30,5 B de parâmetros, ~29 B
+    # estão nos experts e só 8 dos 128 experts são lidos por token. O resto —
+    # atenção, embeddings, router — são ~1,5 B, e é isso que precisa estar na
+    # GPU de verdade, porque é lido em TODA passagem.
+    #
+    # --n-cpu-moe N mantém os tensores de expert das N primeiras camadas na RAM
+    # do sistema. Com N=40 (de 48), 8 camadas de expert continuam na VRAM:
+    #   VRAM ~6,5 GB = 2,0 (atencao+embed) + 2,0 (8 camadas de expert)
+    #                + 1,5 (KV q8_0 em 32k) + ~1,0 (buffers de computo)
+    #   RAM  ~10  GB = as 40 camadas de expert que sobraram
+    #
+    # Ajuste N pela sua folga: DIMINUIR N traz experts de volta para a GPU e
+    # acelera, até a VRAM encostar em ~7,5 GB. AUMENTAR alivia a RAM. Se a
+    # máquina começar a paginar, aumente — swap aqui mata a geração de vez.
+    #
+    # KV de 48 KB/token em q8_0 (48 camadas x 4 kv-heads x 128 head_dim): a
+    # atenção é GQA agressiva, 4 kv-heads contra 32 de query. É por isso que
+    # cabem 32k de contexto em 1,5 GB, contra 16k do 8B denso.
+    #
+    # Sem --reasoning off de propósito: o -Instruct nao e um modelo de
+    # raciocinio, entao nao ha o que desligar — diferente dos dois Qwen3 base.
+    [pscustomobject]@{
+        Name = 'moe'; Repo = 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF'; Quant = 'UD-Q3_K_XL'
+        FileGB = 12.9; Ctx = 32768; VramGB = 6.5; RamGB = 10.0; CpuMoe = 40; Tools = $true
+        ExtraArgs = @()
+        Desc = 'Qwen3-Coder 30B-A3B (MoE, 3B ativos). O melhor codigo que esta maquina serve. Experts na RAM, atencao na VRAM: espere 15-22 tok/s, nao os 73 do 8B.'
+    },
     [pscustomobject]@{
         Name = 'fast'; Repo = 'bartowski/Qwen2.5-Coder-7B-Instruct-GGUF'; Quant = 'Q4_K_M'
-        FileGB = 4.68; Ctx = 16384; VramGB = 5.7; Tools = $false
+        FileGB = 4.68; Ctx = 16384; VramGB = 5.7; RamGB = 0.5; CpuMoe = 0; Tools = $false
         ExtraArgs = @()
         Desc = 'Qwen2.5 Coder 7B. Escreve codigo melhor, mas NAO serve como agente. Ideal para chat/edit no VSCode.'
     },
     [pscustomobject]@{
         Name = 'quality'; Repo = 'bartowski/Qwen2.5-Coder-14B-Instruct-GGUF'; Quant = 'Q4_K_M'
-        FileGB = 8.99; Ctx = 8192; VramGB = 9.6; Tools = $false
+        FileGB = 8.99; Ctx = 8192; VramGB = 9.6; RamGB = 0.5; CpuMoe = 0; Tools = $false
         ExtraArgs = @()
         Desc = 'Qwen2.5 Coder 14B. NAO CABE nos 8 GB: parte das camadas vai para a CPU e fica lento. Use so se aceitar a queda.'
     },
     [pscustomobject]@{
         Name = 'tiny'; Repo = 'Qwen/Qwen3-4B-GGUF'; Quant = 'Q4_K_M'
-        FileGB = 2.50; Ctx = 32768; VramGB = 4.1; Tools = $true
+        FileGB = 2.50; Ctx = 32768; VramGB = 4.1; RamGB = 0.5; CpuMoe = 0; Tools = $true
         ExtraArgs = @('--reasoning', 'off')
         Desc = 'Qwen3 4B. Tool calling validado (ciclo completo). ~110 tok/s de geracao e ~575 de prefill: 1,5x o 8B, nao 2x. Cabe com folga em 8 GB.'
     }
@@ -265,6 +308,24 @@ function Get-VramInfo {
             TotalGB  = [math]::Round([double]$f[1] / 1024, 1)
             UsedGB   = [math]::Round([double]$f[2] / 1024, 1)
             FreeGB   = [math]::Round(([double]$f[1] - [double]$f[2]) / 1024, 1)
+        }
+    } catch { $null }
+}
+
+# RAM do sistema, em GB. Irrelevante para os perfis densos — o peso deles vive
+# na VRAM — mas é o número que decide se o perfil `moe` sobe ou pagina.
+#
+# FreeGB vem de FreePhysicalMemory (KB), que é a memória de fato ociosa. Não
+# confundir com "disponível" do Gerenciador de Tarefas, que soma cache
+# descartável: o llama.cpp consegue usar parte disso, então o valor real
+# utilizável fica ENTRE os dois. Por isso os avisos abaixo alertam em vez de
+# abortar.
+function Get-RamInfo {
+    try {
+        $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+        [pscustomobject]@{
+            TotalGB = [math]::Round($os.TotalVisibleMemorySize / 1MB, 1)
+            FreeGB  = [math]::Round($os.FreePhysicalMemory / 1MB, 1)
         }
     } catch { $null }
 }
@@ -381,6 +442,7 @@ function Invoke-Models {
             PERFIL  = $p.Name
             ARQUIVO = "$($p.FileGB) GB"
             VRAM    = "$($p.VramGB) GB"
+            RAM     = if ($p.CpuMoe -gt 0) { "$($p.RamGB) GB" } else { '-' }
             CTX     = $p.Ctx
             TOOLS   = if ($p.Tools) { 'sim' } else { 'nao' }
             ESTADO  = if (Test-ModelDownloaded $p) { 'baixado' } else { 'ausente' }
@@ -392,13 +454,16 @@ function Invoke-Models {
     foreach ($p in $Profiles) { Write-Dim "  $($p.Name.PadRight(8)) $($p.Desc)" }
 
     $vram = Get-VramInfo
+    $ram  = Get-RamInfo
     Write-Host ''
     if ($vram) {
         Write-Dim "Padrao: $DefaultProfile · GPU: $($vram.Name) $($vram.TotalGB) GB (livre $($vram.FreeGB) GB) · disco: $(Get-FreeDiskGB) GB"
     } else {
         Write-Warn2 'nvidia-smi indisponivel — rode: .\llm-server.ps1 setup'
     }
+    if ($ram) { Write-Dim "RAM do sistema: $($ram.TotalGB) GB (livre $($ram.FreeGB) GB)" }
     Write-Dim 'TOOLS=sim -> serve como agente (pi, Cline). TOOLS=nao -> so chat/edit.'
+    Write-Dim 'RAM=- -> o peso todo vive na VRAM. So o perfil MoE usa RAM do sistema.'
 }
 
 function Invoke-Vram {
@@ -406,20 +471,35 @@ function Invoke-Vram {
     $vram = Get-VramInfo
     if (-not $vram) { Write-Err2 'nvidia-smi nao encontrado.'; return }
 
+    $ram = Get-RamInfo
     Write-Host "  GPU: $($vram.Name)"
-    Write-Host "  total $($vram.TotalGB) GB · em uso $($vram.UsedGB) GB · livre $($vram.FreeGB) GB`n"
+    Write-Host "  total $($vram.TotalGB) GB · em uso $($vram.UsedGB) GB · livre $($vram.FreeGB) GB"
+    if ($ram) { Write-Host "  RAM: total $($ram.TotalGB) GB · livre $($ram.FreeGB) GB" }
+    Write-Host ''
 
     foreach ($p in $Profiles) {
-        $fits = $p.VramGB -le ($vram.TotalGB - 0.8)   # ~0.8 GB reservado ao desktop
+        # ~0.8 GB reservado ao desktop. Nos perfis MoE o VramGB ja e o valor
+        # DEPOIS do offload — nao o tamanho do arquivo.
+        $fits = $p.VramGB -le ($vram.TotalGB - 0.8)
+        if ($ram -and $p.CpuMoe -gt 0) { $fits = $fits -and ($p.RamGB -le ($ram.TotalGB - 4)) }
         $tag  = if ($fits) { 'cabe   ' } else { 'ESTOURA' }
         $col  = if ($fits) { 'Green' } else { 'Red' }
+        $como = if ($p.CpuMoe -gt 0) {
+            "(+ $($p.RamGB) GB de RAM: $($p.CpuMoe)/48 camadas de expert fora da GPU)"
+        } else {
+            "(modelo $($p.FileGB) GB + KV q8_0 em ctx $($p.Ctx))"
+        }
         Write-Host "  $($p.Name.PadRight(8)) $($p.VramGB) GB  " -NoNewline
         Write-Host $tag -ForegroundColor $col -NoNewline
-        Write-Host "  (modelo $($p.FileGB) GB + KV q8_0 em ctx $($p.Ctx))"
+        Write-Host "  $como"
     }
     Write-Host ''
-    Write-Dim 'Quando estoura, o llama.cpp joga camadas para a CPU: funciona, mas fica'
-    Write-Dim 'varias vezes mais lento. Prefira um perfil que caiba inteiro na VRAM.'
+    Write-Dim 'Num modelo DENSO, estourar a VRAM e desastre: o llama.cpp joga camadas'
+    Write-Dim 'inteiras para a CPU e cada token le todas elas. Prefira um que caiba.'
+    Write-Dim ''
+    Write-Dim 'Num MoE isso deixa de valer, e e o ponto do perfil `moe`: com 8 de 128'
+    Write-Dim 'experts ativos por token, deixar experts na RAM custa pouco. Ali a conta'
+    Write-Dim 'e -4 GB de RAM para o Windows, e o resto pode ser modelo.'
 }
 
 # ─── ciclo de vida ────────────────────────────────────────────────────────────
@@ -491,6 +571,17 @@ function Invoke-Start($name) {
         Write-Warn2 "ou use um perfil menor: .\llm-server.ps1 start tiny"
     }
 
+    # Só o perfil MoE depende de RAM do sistema; nos densos RamGB e 0.5 e este
+    # bloco nunca dispara. Aviso, nao aborto: FreePhysicalMemory subestima o que
+    # o llama.cpp consegue usar (ver Get-RamInfo).
+    $ram = Get-RamInfo
+    if ($ram -and $p.RamGB -gt 1 -and $p.RamGB -gt $ram.FreeGB) {
+        Write-Warn2 "Perfil pede ~$($p.RamGB) GB de RAM do sistema e ha $($ram.FreeGB) GB livres de $($ram.TotalGB) GB."
+        Write-Warn2 'Se faltar, o Windows pagina os experts para o disco e a geracao despenca'
+        Write-Warn2 'de dezenas para poucos tok/s. Feche o navegador, ou traga experts de volta'
+        Write-Warn2 "para a GPU baixando o --n-cpu-moe: `$env:LLM_CPU_MOE=32; .\llm-server.ps1 start $($p.Name)"
+    }
+
     Write-Head "Subindo $($p.Name) em http://${BindHost}:$Port"
     Write-Dim "$($p.Repo):$($p.Quant) · ctx $($p.Ctx) · alias $($p.Name)"
 
@@ -531,6 +622,15 @@ function Invoke-Start($name) {
         # so escutamos em 127.0.0.1, o risco e baixo, mas fechamos de todo jeito.
         '--api-key', 'local'
     )
+
+    # --n-cpu-moe: só em perfil MoE. Ajustável sem editar o script, porque este é
+    # o botão que se gira para trocar VRAM por RAM na sua máquina concreta —
+    # veja o comentário do perfil `moe` para a conta.
+    $cpuMoe = if ($env:LLM_CPU_MOE) { [int]$env:LLM_CPU_MOE } else { $p.CpuMoe }
+    if ($cpuMoe -gt 0) {
+        $serverArgs += @('--n-cpu-moe', "$cpuMoe")
+        Write-Dim "experts na RAM: $cpuMoe de 48 camadas (ajuste com `$env:LLM_CPU_MOE)"
+    }
 
     # Flags do perfil (ex.: --reasoning off nos Qwen3). Array vazio some aqui
     # sem quebrar nada — mas o campo tem de existir em TODO perfil, senao o
@@ -739,7 +839,12 @@ function Invoke-Help {
   models           perfis e o que ja foi baixado
   pull <perfil>    so baixa os pesos
   bench            mede tokens/s reais aqui
-  vram             orcamento de VRAM por perfil
+  vram             orcamento de VRAM (e de RAM, no perfil MoE) por perfil
+
+MoE:
+  $env:LLM_CPU_MOE=N   quantas das 48 camadas mantem os experts na RAM.
+                       Menor = mais rapido e mais VRAM; maior = alivia a RAM.
+                       Padrao do perfil `moe`: 40.
 
 Rede:
   -Lan             serve para a rede local, com bind so no IP desta maquina

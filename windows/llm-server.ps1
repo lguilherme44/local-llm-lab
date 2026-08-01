@@ -266,22 +266,32 @@ $Profiles = @(
     # --n-cpu-moe N mantém os tensores de expert das N primeiras camadas na RAM
     # do sistema. As demais ficam na VRAM junto com atenção, embeddings e KV.
     #
-    # O ctx é 32768, e a conta de por que cabe importa mais que o número.
+    # Ctx 16384 e --n-cpu-moe 36. Os dois números saíram de uma matriz medida,
+    # e nenhum é o que a intuição sugere:
     #
-    # A primeira versão deste perfil usava 16384, com base num erro: somar VRAM
-    # e RAM num orçamento único e concluir que 32k estouraria por 30 MB. Está
-    # errado porque o cache KV NÃO vai para onde vão os experts — ele fica na
-    # VRAM, e ali sobra espaço justamente porque os experts saíram de lá.
+    #   ctx  n-cpu-moe   geracao   prefill   RAM livre   VRAM
+    #   16k     40        24,4      595       0,17 GB    5171 MiB
+    #   32k     40        ~4,8       —        0,27 GB    6058 MiB
+    #   32k     36         9,3      120       2,82 GB    7017 MiB
+    #   16k     36        26,6      424       2,77 GB    6169 MiB   <- este
     #
-    # Medido com o modelo carregado: 5,2 GB de VRAM em uso dos 8. O KV custa
-    # 48 KB/token em q8_0, então dobrar 16k -> 32k acrescenta ~0,8 GB e leva a
-    # VRAM para ~6,0 GB. A RAM não é tocada. O sintoma que denunciou o erro foi
-    # um cliente com system prompt grande batendo em
-    #   "request (23334 tokens) exceeds the available context size (16384)".
+    # Duas lições. A primeira: 40 era desperdício. Baixar para 36 traz 4 camadas
+    # de expert de volta à GPU, usando VRAM que estava parada, e devolve 2,6 GB
+    # de RAM — a margem que antes era 0,17 GB, ou seja, nenhuma.
     #
-    # O teto real do contexto aqui é a VRAM livre, não a RAM: cada 16k a mais
-    # custa ~0,8 GB de VRAM. Para ir além, baixe o --n-cpu-moe é o CONTRÁRIO do
-    # que ajuda — aquilo traz experts para a VRAM e come o espaço do KV.
+    # A segunda: 32k de contexto NÃO cabe em throughput, mesmo cabendo em
+    # memória. O prefill despenca para 120 tok/s. A causa não é o cache KV, que
+    # vive na VRAM e é barato aqui (48 KB/token em q8_0): são os buffers de
+    # computação do lado da CPU, que crescem com o contexto e disputam a RAM
+    # com os experts.
+    #
+    # Se um cliente reclamar de "exceeds the available context size", o
+    # conserto é quase sempre no CLIENTE, não aqui. Medido: um pedido de
+    # landing page tinha 552 tokens de conteúdo dentro de 23.334 de requisição
+    # — o resto era system prompt e skills. Subir a janela para acomodar isso
+    # troca 5x de prefill por espaço que o prompt inflado consome de qualquer
+    # jeito. Se ainda assim precisar da janela numa sessão:
+    #   $env:LLM_CTX=32768; .\llm-server.ps1 restart moe -Lan
     #
     # Ajuste N pela sua folga: DIMINUIR N traz experts de volta para a GPU e
     # acelera, até a VRAM encostar em ~7,5 GB. AUMENTAR alivia a RAM. Se a
@@ -297,10 +307,10 @@ $Profiles = @(
     # raciocinio, entao nao ha o que desligar — diferente dos dois Qwen3 base.
     [pscustomobject]@{
         Name = 'moe'; Repo = 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF'; Quant = 'UD-Q3_K_XL'
-        FileGB = 12.9; Ctx = 32768; VramGB = 6.0; RamGB = 9.7; CpuMoe = 40; Tools = $true
+        FileGB = 12.9; Ctx = 16384; VramGB = 6.2; RamGB = 6.9; CpuMoe = 36; Tools = $true
         File = 'Qwen3-Coder-30B-A3B-Instruct-UD-Q3_K_XL.gguf'
         ExtraArgs = @()
-        Desc = 'Qwen3-Coder 30B-A3B (MoE, 3B ativos). Tool calling validado (ciclo completo). 24,4 tok/s de geracao mas 595 de prefill: gera 3x mais devagar que o 8B e faz prefill 1,5x mais rapido. Sobe com ~0,2 GB de RAM livre — feche o navegador.'
+        Desc = 'Qwen3-Coder 30B-A3B (MoE, 3B ativos). Tool calling validado e entrega feature (test-feature.py) onde o 8B falha. 26,6 tok/s de geracao, 424 de prefill. Janela maior: \$env:LLM_CTX=32768, mas custa 5x no prefill.'
     },
     [pscustomobject]@{
         Name = 'fast'; Repo = 'bartowski/Qwen2.5-Coder-7B-Instruct-GGUF'; Quant = 'Q4_K_M'
@@ -811,7 +821,7 @@ function Invoke-Start($name) {
     $serverArgs = @(
         $fonte
         '--host', $BindHost, '--port', "$Port"
-        '-c', "$($p.Ctx)"
+        '-c', "$ctx"
         '-ngl', '999'
         '-ctk', 'q8_0', '-ctv', 'q8_0'
         '-fa', 'on'
@@ -821,6 +831,12 @@ function Invoke-Start($name) {
         # so escutamos em 127.0.0.1, o risco e baixo, mas fechamos de todo jeito.
         '--api-key', 'local'
     )
+
+    # Contexto sobrescritível: a janela é a troca mais frequente que se quer
+    # fazer sem editar o arquivo, e o custo dela em throughput é grande o
+    # bastante para não virar padrão. Ver o comentário do perfil `moe`.
+    $ctx = if ($env:LLM_CTX) { [int]$env:LLM_CTX } else { $p.Ctx }
+    if ($ctx -ne $p.Ctx) { Write-Dim "contexto sobrescrito: $ctx (perfil pede $($p.Ctx))" }
 
     # --n-cpu-moe: só em perfil MoE. Ajustável sem editar o script, porque este é
     # o botão que se gira para trocar VRAM por RAM na sua máquina concreta —

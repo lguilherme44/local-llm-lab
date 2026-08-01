@@ -208,6 +208,14 @@ $Headers = @{ 'Content-Type' = 'application/json'; 'Authorization' = "Bearer $Ap
 # RamGB = RAM do SISTEMA que o processo precisa além da VRAM. Nos perfis densos
 # é quase nada (o peso todo vai para a GPU); no `moe` é o número que manda.
 #
+# File = nome do .gguf baixado direto para $ModelDir, em vez de resolvido por
+# -hf. Vazio significa "use -hf". Existe porque o -hf NÃO resolve os quants
+# dinâmicos da Unsloth (UD-Q3_K_XL e afins): ele casa a tag por nome de quant
+# padrão, não acha, e — isto é o perigoso — em vez de falhar SOBE EM ROUTER
+# MODE sem modelo nenhum. Servidor no ar, HTTP respondendo, zero byte baixado,
+# status de saída 0. Um `bench` contra isso mede o nada.
+# Quando File está preenchido, o download é curl (resumível) e o start usa -m.
+#
 # --reasoning off nos dois Qwen3: eles pensam por padrão, e o raciocínio consome
 # a cota de max_tokens ANTES de gerar resposta. Um cliente que peça poucos
 # tokens recebe content vazio com finish_reason "stop" e nenhum erro — falha
@@ -219,6 +227,7 @@ $Profiles = @(
     [pscustomobject]@{
         Name = 'agent'; Repo = 'Qwen/Qwen3-8B-GGUF'; Quant = 'Q4_K_M'
         FileGB = 5.03; Ctx = 16384; VramGB = 6.24; RamGB = 0.5; CpuMoe = 0; Tools = $true
+        File = ''
         ExtraArgs = @('--reasoning', 'off')
         Desc = 'Qwen3 8B. Tool calling validado (ciclo completo). ~73 tok/s de geracao e ~400 de prefill nesta 3060 Ti. Padrao.'
     },
@@ -229,42 +238,53 @@ $Profiles = @(
     # GPU de verdade, porque é lido em TODA passagem.
     #
     # --n-cpu-moe N mantém os tensores de expert das N primeiras camadas na RAM
-    # do sistema. Com N=40 (de 48), 8 camadas de expert continuam na VRAM:
-    #   VRAM ~6,5 GB = 2,0 (atencao+embed) + 2,0 (8 camadas de expert)
-    #                + 1,5 (KV q8_0 em 32k) + ~1,0 (buffers de computo)
-    #   RAM  ~10  GB = as 40 camadas de expert que sobraram
+    # do sistema. As demais ficam na VRAM junto com atenção, embeddings e KV.
+    #
+    # O ctx é 16384 e NÃO 32768, apesar do KV baratíssimo, porque nesta máquina
+    # o orçamento total é que aperta — e pesos são pesos, esteja na VRAM ou na
+    # RAM. Medido com tudo fechado: 6,76 GB de VRAM livre + 8,51 GB de RAM
+    # disponível = 15,27 GB. O modelo pede 12,9 de peso mais buffers, então:
+    #   ctx 32k -> 12,9 + 1,5 (KV) + 0,9 (buffers) = 15,3  NAO CABE
+    #   ctx 16k -> 12,9 + 0,75      + 0,9          = 14,55 cabe, ~0,7 de folga
+    # Subir para 32k exige mais RAM na maquina, nao um --n-cpu-moe diferente.
     #
     # Ajuste N pela sua folga: DIMINUIR N traz experts de volta para a GPU e
     # acelera, até a VRAM encostar em ~7,5 GB. AUMENTAR alivia a RAM. Se a
-    # máquina começar a paginar, aumente — swap aqui mata a geração de vez.
+    # máquina começar a paginar, aumente — mas note que aqui paginar não é
+    # "fica lento": são ~1,3 GB de experts lidos POR TOKEN, e puxar isso do SSD
+    # derruba a geração para 1-2 tok/s. O modelo deixa de ser usável.
     #
     # KV de 48 KB/token em q8_0 (48 camadas x 4 kv-heads x 128 head_dim): a
-    # atenção é GQA agressiva, 4 kv-heads contra 32 de query. É por isso que
-    # cabem 32k de contexto em 1,5 GB, contra 16k do 8B denso.
+    # atenção é GQA agressiva, 4 kv-heads contra 32 de query. É o que faz 16k
+    # custar só 0,75 GB — o Qwen3-8B denso gasta 1,2 GB no mesmo contexto.
     #
     # Sem --reasoning off de propósito: o -Instruct nao e um modelo de
     # raciocinio, entao nao ha o que desligar — diferente dos dois Qwen3 base.
     [pscustomobject]@{
         Name = 'moe'; Repo = 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF'; Quant = 'UD-Q3_K_XL'
-        FileGB = 12.9; Ctx = 32768; VramGB = 6.5; RamGB = 10.0; CpuMoe = 40; Tools = $true
+        FileGB = 12.9; Ctx = 16384; VramGB = 5.4; RamGB = 9.2; CpuMoe = 40; Tools = $true
+        File = 'Qwen3-Coder-30B-A3B-Instruct-UD-Q3_K_XL.gguf'
         ExtraArgs = @()
         Desc = 'Qwen3-Coder 30B-A3B (MoE, 3B ativos). O melhor codigo que esta maquina serve. Experts na RAM, atencao na VRAM: espere 15-22 tok/s, nao os 73 do 8B.'
     },
     [pscustomobject]@{
         Name = 'fast'; Repo = 'bartowski/Qwen2.5-Coder-7B-Instruct-GGUF'; Quant = 'Q4_K_M'
         FileGB = 4.68; Ctx = 16384; VramGB = 5.7; RamGB = 0.5; CpuMoe = 0; Tools = $false
+        File = ''
         ExtraArgs = @()
         Desc = 'Qwen2.5 Coder 7B. Escreve codigo melhor, mas NAO serve como agente. Ideal para chat/edit no VSCode.'
     },
     [pscustomobject]@{
         Name = 'quality'; Repo = 'bartowski/Qwen2.5-Coder-14B-Instruct-GGUF'; Quant = 'Q4_K_M'
         FileGB = 8.99; Ctx = 8192; VramGB = 9.6; RamGB = 0.5; CpuMoe = 0; Tools = $false
+        File = ''
         ExtraArgs = @()
         Desc = 'Qwen2.5 Coder 14B. NAO CABE nos 8 GB: parte das camadas vai para a CPU e fica lento. Use so se aceitar a queda.'
     },
     [pscustomobject]@{
         Name = 'tiny'; Repo = 'Qwen/Qwen3-4B-GGUF'; Quant = 'Q4_K_M'
         FileGB = 2.50; Ctx = 32768; VramGB = 4.1; RamGB = 0.5; CpuMoe = 0; Tools = $true
+        File = ''
         ExtraArgs = @('--reasoning', 'off')
         Desc = 'Qwen3 4B. Tool calling validado (ciclo completo). ~110 tok/s de geracao e ~575 de prefill: 1,5x o 8B, nao 2x. Cabe com folga em 8 GB.'
     }
@@ -355,6 +375,15 @@ function Get-CachePaths {
 }
 
 function Test-ModelDownloaded($prof) {
+    # Perfil com File vive em $ModelDir, fora do cache do Hugging Face. Checar
+    # o tamanho e não só a existência: um curl interrompido deixa arquivo
+    # parcial, e "existe" nesse caso é uma resposta errada.
+    if ($prof.File) {
+        $f = Join-Path $ModelDir $prof.File
+        if (-not (Test-Path $f)) { return $false }
+        return ((Get-Item $f).Length / 1GB) -ge ($prof.FileGB * 0.98)
+    }
+
     $needle = ($prof.Repo -split '/')[-1]
     foreach ($cache in (Get-CachePaths)) {
         # O blob baixado leva o nome do repo no diretório e o quant no arquivo;
@@ -516,9 +545,72 @@ function Invoke-Pull($name) {
     }
     Write-Head "Baixando $($p.Name) — $($p.FileGB) GB"
     Write-Dim "$($p.Repo):$($p.Quant)"
+
+    # Perfil com File preenchido não passa pelo -hf: baixa o .gguf direto com
+    # curl. Ver o comentário de File nos perfis para o porquê — resumo: o -hf
+    # não resolve quant dinâmico da Unsloth e sobe em router mode sem modelo.
+    #
+    # curl.exe existe no Windows 10+ de fábrica. -C - retoma de onde parou, o
+    # que num arquivo de 13 GB não é luxo.
+    if ($p.File) {
+        New-Item -ItemType Directory -Force -Path $ModelDir | Out-Null
+        $destino = Join-Path $ModelDir $p.File
+        $url = "https://huggingface.co/$($p.Repo)/resolve/main/$($p.File)"
+        Write-Dim $url
+        & curl.exe -L -C - --retry 5 --progress-bar -o $destino $url
+        if (Test-Path $destino) {
+            $gb = [math]::Round((Get-Item $destino).Length / 1GB, 2)
+            # Um arquivo truncado carrega e falha estranho depois; melhor pegar aqui.
+            if ($gb -lt ($p.FileGB * 0.98)) {
+                Write-Err2 "Baixou so $gb GB de ~$($p.FileGB) GB. Rode o pull de novo: o curl retoma."
+                exit 1
+            }
+            Write-Ok "Pesos prontos — $gb GB em $destino"
+        } else {
+            Write-Err2 'O curl nao gravou o arquivo.'
+            exit 1
+        }
+        return
+    }
+
     # O próprio llama-server baixa via -hf; --no-warmup evita gastar tempo depois.
-    & $exe -hf "$($p.Repo):$($p.Quant)" --no-warmup -c 512 -ngl 0 --port 0 2>&1 |
-        Select-String -Pattern 'download|%|error' | Select-Object -Last 5
+    #
+    # A porta NÃO pode ser 0. Parece inofensivo — "não vou servir, só baixar" —
+    # mas o llama-server valida a porta ANTES de tocar no download e sai na hora,
+    # deixando só o diretório vazio no cache do Hugging Face. Pior: sai com
+    # status 0, então nada acusa a falha e o `start` seguinte rebaixa tudo.
+    # Medido na prática: 12,9 GB que nunca começaram.
+    #
+    # Daí uma porta alta de verdade, e diferente de $Port para não colidir com um
+    # servidor já no ar. O processo sobe, baixa e é derrubado logo abaixo.
+    $pullPort = $Port + 19   # 8099 no padrão
+    $proc = Start-Process -FilePath $exe -PassThru -NoNewWindow -ArgumentList @(
+        '-hf', "$($p.Repo):$($p.Quant)"
+        '--no-warmup', '-c', '512', '-ngl', '0'
+        '--port', "$pullPort"
+    )
+
+    # Progresso pelo tamanho no disco: a barra do llama-server vai para o
+    # console dele, não para cá, e um pipe engoliria tudo até o fim.
+    $alvo = $p.FileGB
+    while (-not $proc.HasExited) {
+        Start-Sleep -Seconds 5
+        $gb = 0
+        foreach ($cache in (Get-CachePaths)) {
+            $dir = Join-Path $cache ("models--" + ($p.Repo -replace '/', '--'))
+            if (Test-Path $dir) {
+                $s = (Get-ChildItem $dir -Recurse -File -EA SilentlyContinue |
+                      Measure-Object Length -Sum).Sum
+                if ($s) { $gb += $s / 1GB }
+            }
+        }
+        Write-Host ("`r  {0,6:N2} / {1} GB" -f $gb, $alvo) -NoNewline -ForegroundColor DarkGray
+        # O download termina antes do processo: ele segue e sobe o servidor.
+        if ($gb -ge ($alvo * 0.99)) { break }
+    }
+    Write-Host ''
+    if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -EA SilentlyContinue }
+
     if (Test-ModelDownloaded $p) { Write-Ok 'Pesos prontos.' } else { Write-Warn2 'Nao confirmei o download; tente start.' }
 }
 
@@ -609,8 +701,16 @@ function Invoke-Start($name) {
     #           (ja e o padrao nas versoes atuais, explicito aqui de proposito)
     # NAO chamar esta variavel de $args: no PowerShell $args e automatica e
     # reservada; atribuir a ela dentro de funcao gera comportamento estranho.
+    # -m com caminho local, ou -hf para os perfis que o -hf resolve. Ver o
+    # comentario do campo File nos perfis.
+    $fonte = if ($p.File) {
+        @('-m', (Join-Path $ModelDir $p.File))
+    } else {
+        @('-hf', "$($p.Repo):$($p.Quant)")
+    }
+
     $serverArgs = @(
-        '-hf', "$($p.Repo):$($p.Quant)"
+        $fonte
         '--host', $BindHost, '--port', "$Port"
         '-c', "$($p.Ctx)"
         '-ngl', '999'

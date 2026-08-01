@@ -102,6 +102,20 @@ Também medido nessa máquina: **prefill a ~176 tok/s** (3.517 tokens de prompt 
 
 O 4B roda ao **dobro** da velocidade do 8B e faz tool calling igualmente bem. Em hardware limitado, esse é o trade-off que importa — e é o oposto do reflexo "maior é melhor".
 
+**Hardware C** — Windows, RTX 3060 Ti (8 GB de VRAM) + 16 GB de RAM. Runtime: llama.cpp/CUDA.
+
+| perfil | modelo | geração | prefill | entrega a feature? |
+|---|---|---|---|---|
+| `moe` | Qwen3-Coder-30B-A3B (MoE) | 24,4 tok/s | **595 tok/s** | ✅ 2 turnos |
+| `agent` | Qwen3-8B | **72,5 tok/s** | 393 tok/s | ❌ 14 turnos, 6 reescritas |
+| `tiny` | Qwen3-4B | 110,4 tok/s | 575 tok/s | não testado |
+
+Duas coisas contraintuitivas aqui, e as duas custaram medição:
+
+**Um MoE de 30 B roda numa GPU de 8 GB.** Só 8 dos 128 experts são lidos por token, então manter experts na RAM do sistema custa pouco — `--n-cpu-moe` põe a atenção na VRAM e os experts na RAM. Não vale para modelo denso: ali a mesma tentativa dá o precipício de 28× acima.
+
+**O modelo mais rápido é o que não entrega.** O `agent` gera 3× mais tokens por segundo, passa no teste de tool calling, e mesmo assim não fecha uma feature de trinta linhas — inverte uma condição e reescreve em volta do próprio bug seis vezes. É por isso que existe o `test-feature.py`: tok/s não prediz trabalho feito.
+
 Metodologia completa em [`docs/benchmarks.md`](docs/benchmarks.md).
 
 ---

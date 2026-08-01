@@ -155,17 +155,34 @@ Dois cuidados: ele escuta em `0.0.0.0` por padrão (expõe na rede — force `--
 
 ---
 
+## Passar aqui não é o bastante
+
+Tudo nesta página mede uma coisa: o modelo **sabe pedir** uma ferramenta e usar o retorno. É condição necessária para ser agente, e não é suficiente — nem perto.
+
+Medido: o `Qwen3-8B` passa neste teste, é o mais rápido da bancada com 72,5 tok/s, e **não entrega uma feature de trinta linhas**. Recebeu um `Cache` sem expiração e seis testes falhando; gastou 14 turnos, reescreveu o arquivo seis vezes, e saiu com o teste mais simples da suíte quebrado. O bug era uma condição invertida que ele releu cinco vezes sem enxergar.
+
+O `Qwen3-Coder-30B-A3B` resolveu em 2 turnos, gerando 3× mais devagar.
+
+Por isso existe um segundo script. O `test-tools.py` valida o **ciclo**; o `test-feature.py` valida a **entrega**, e o critério dele não é heurística de texto — é o `pytest`:
+
+```bash
+uv run --with pytest scripts/test-feature.py moe --host 192.168.3.51
+```
+
+Números e análise em [benchmarks](benchmarks.md#teste-de-feature-quando-o-benchmark-e-a-entrega-discordam).
+
+---
+
 ## Checklist antes de confiar num modelo como agente
 
-1. Rode `scripts/test-tools.py` com o ciclo completo
+1. Rode `scripts/test-tools.py` — o ciclo completo, não só a primeira chamada
 2. Se `tool_calls: null`, veja o `content` — o modelo tentou e errou a tag, ou não tentou?
-3. Se `content` vier vazio, procure `chat_template.jinja` no repositório
+3. Se `content` vier vazio, suspeite de raciocínio comendo a cota de `max_tokens` antes de checar template: é a causa mais comum e a mais silenciosa (`--reasoning off`)
 4. Se falhar em MLX, teste a variante GGUF antes de descartar o modelo
 5. Teste nos dois engines antes de culpar o servidor
+6. **Rode `scripts/test-feature.py`.** Os cinco passos acima podem passar e o modelo ainda não servir para trabalhar
 
-E o teste final, que nenhum script substitui: **dê uma tarefa real**. Coloque um bug num arquivo e peça ao agente para corrigir. Foi assim que validamos o `pi` — arquivo com `return a - b`, pedido "leia e corrija". Ele leu, editou, acertou e preservou o resto do arquivo.
-
-Levou **5,5 minutos e 4 chamadas** para um bug de uma linha. Funciona; o custo por turno é alto.
+E o teste final, que nenhum script substitui: **use no seu código**. O `test-feature.py` roda uma tarefa pequena e isolada, escolhida para caber em 16k de contexto. Um refactor multi-arquivo, com o contexto crescendo a cada turno e o prompt cache perdendo eficácia, é outro regime — e continua sendo a limitação mais relevante e menos testada deste repositório.
 
 ---
 

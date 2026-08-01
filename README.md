@@ -61,6 +61,8 @@ scripts/
   test-tools.py           valida se um modelo faz tool calling de verdade
   test-feature.py         valida se ele ENTREGA uma feature — criterio e o pytest
   check-links.py          confere links e âncoras desta documentação
+examples/
+  landing-page/           saida real e nao editada do perfil moe, com o que errou
 ```
 
 ### Documentação
@@ -106,9 +108,9 @@ O 4B roda ao **dobro** da velocidade do 8B e faz tool calling igualmente bem. Em
 
 | perfil | modelo | geração | prefill | entrega a feature? |
 |---|---|---|---|---|
-| `moe` | Qwen3-Coder-30B-A3B (MoE) | 24,4 tok/s | **595 tok/s** | ✅ 2 turnos |
+| `moe` | Qwen3-Coder-30B-A3B (MoE) | 26,6 tok/s | 424 tok/s | ✅ 2 turnos |
 | `agent` | Qwen3-8B | **72,5 tok/s** | 393 tok/s | ❌ 14 turnos, 6 reescritas |
-| `tiny` | Qwen3-4B | 110,4 tok/s | 575 tok/s | não testado |
+| `tiny` | Qwen3-4B | **110,4 tok/s** | **575 tok/s** | não testado |
 
 Duas coisas contraintuitivas aqui, e as duas custaram medição:
 
@@ -117,6 +119,12 @@ Duas coisas contraintuitivas aqui, e as duas custaram medição:
 **O modelo mais rápido é o que não entrega.** O `agent` gera 3× mais tokens por segundo, passa no teste de tool calling, e mesmo assim não fecha uma feature de trinta linhas — inverte uma condição e reescreve em volta do próprio bug seis vezes. É por isso que existe o `test-feature.py`: tok/s não prediz trabalho feito.
 
 Metodologia completa em [`docs/benchmarks.md`](docs/benchmarks.md).
+
+### Uma saída completa, sem edição
+
+[`examples/landing-page/`](examples/landing-page/) tem uma landing page inteira gerada pelo perfil `moe`: 7.432 tokens em 5 minutos, HTML válido do `<!DOCTYPE` ao `</html>`, nenhuma requisição saindo da rede local.
+
+O README de lá documenta o que ele **ignorou** com o mesmo cuidado — três das cinco diretrizes do prompt, incluindo as duas classes que o pedido citava pelo nome. É a lição deste repositório em forma visível: modelo local acerta a forma e perde o detalhe, sem avisar.
 
 ---
 

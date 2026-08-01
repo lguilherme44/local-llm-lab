@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   llm-server — LLM local servido em HTTP (API compatível com OpenAI) no Windows,
   via llama.cpp com CUDA.
@@ -10,9 +10,16 @@
 
   Hardware alvo: RTX 3060 Ti (8 GB VRAM), 16 GB RAM, SSD 1 TB.
 
-  O limite real aqui é a VRAM, não a RAM. Os 8 GB da 3060 Ti definem tudo:
-  o modelo mais o cache KV precisam caber, senão camadas vazam para a CPU e a
-  velocidade cai por um fator grande. Os perfis abaixo já respeitam esse teto.
+  Para os modelos DENSOS o limite é a VRAM, não a RAM: os 8 GB da 3060 Ti
+  definem tudo, porque o modelo mais o cache KV precisam caber ou camadas vazam
+  para a CPU e a velocidade cai por um fator grande.
+
+  O perfil `moe` é a exceção deliberada, e vale entender por quê. Num MoE só
+  uma fração dos parâmetros é lida por token — no Qwen3-Coder-30B-A3B, 8 de 128
+  experts. Manter experts na RAM do sistema deixa de ser desastre e vira
+  arquitetura: a atenção, que é lida sempre, fica na VRAM; os experts, lidos
+  raramente, ficam na RAM. É isso que faz uma 3060 Ti de 8 GB servir um modelo
+  de 30 B. Ali o orçamento é VRAM E RAM, e o `vram` mostra os dois.
 
 .PARAMETER Command
   setup    baixa e instala o llama.cpp com CUDA em %LOCALAPPDATA%\llm-server
@@ -27,13 +34,40 @@
   bench    mede tokens/s reais nesta máquina
   vram     mostra o orçamento de VRAM por perfil
 
+.PARAMETER Lan
+  Serve o modelo para a rede local. Faz bind no IPv4 da interface física ativa
+  — e só nele. Sem esta flag o servidor escuta apenas em 127.0.0.1.
+
+  Não usa 0.0.0.0 de propósito: aquilo escutaria também em VPN corporativa,
+  Hyper-V, WSL e Tailscale. Se a interface não puder ser resolvida, o script
+  falha em vez de abrir tudo.
+
+  Abrir para a rede não basta: o firewall ainda precisa liberar a porta. E a
+  chave `local` do llama-server está publicada no repositório, sobre HTTP puro
+  — quem estiver na mesma rede lê seus prompts e usa sua GPU.
+
+.PARAMETER Detached
+  Sobe o servidor via Agendador de Tarefas, fora da sessão atual, para ele
+  sobreviver ao fechamento do terminal.
+
+  Ligado automaticamente sob SSH. Ali não é conveniência: o Windows põe a
+  sessão num job object e o derruba no logout, matando o servidor — depois de
+  o `start` já ter reportado sucesso, porque o health check passa antes.
+
+  A tarefa roda com LogonType Interactive, na sessão do usuário logado, que é
+  o que dá acesso normal à GPU. Como contrapartida, exige alguém logado na
+  máquina: sem sessão, a tarefa é criada mas não inicia.
+
 .EXAMPLE
   .\llm-server.ps1 setup
   .\llm-server.ps1 start agent
+  .\llm-server.ps1 start agent -Lan
   .\llm-server.ps1 ask "Escreva um debounce genérico em TypeScript"
 
 .NOTES
   Requer: driver NVIDIA recente (nvidia-smi funcionando) e PowerShell 5.1+.
+  Este arquivo é gravado com BOM UTF-8: sem ele o PowerShell 5.1 lê os acentos
+  como ANSI e corrompe a saída. Não remova ao editar.
 #>
 
 [CmdletBinding()]
@@ -43,6 +77,19 @@ param(
                  'models', 'pull', 'bench', 'vram', 'help')]
     [string]$Command = 'start',
 
+    # Serve o modelo para a rede local, fazendo bind no IP da interface física
+    # ativa — e só nele. Deliberadamente NÃO usa 0.0.0.0: aquilo escutaria
+    # também em VPN corporativa, Hyper-V, WSL e Tailscale, que é exposição que
+    # ninguém pediu. Leia o aviso em Get-LanIp antes de usar.
+    [switch]$Lan,
+
+    # Sobe o servidor fora desta sessão, via Agendador de Tarefas, para ele
+    # sobreviver ao fechamento do terminal. LIGADO AUTOMATICAMENTE quando o
+    # script roda por SSH — ali não é conveniência, é necessidade: o Windows
+    # derruba o process tree da sessão no logout e o servidor morreria junto,
+    # depois de o `start` já ter reportado sucesso. Veja Start-Detached.
+    [switch]$Detached,
+
     [Parameter(Position = 1, ValueFromRemainingArguments = $true)]
     [string[]]$Rest
 )
@@ -50,10 +97,98 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
+# ─── encoding ───────────────────────────────────────────────────────────────────
+# Este arquivo tem BOM UTF-8 de propósito. O Windows PowerShell 5.1 lê .ps1 SEM
+# BOM como ANSI (Windows-1252), e cada acento deste script viraria dois
+# caracteres de lixo. Não remova o BOM ao editar — e não confunda com o
+# config.yaml do Continue, que exige o contrário.
+#
+# O BOM resolve a LEITURA do arquivo. A ESCRITA no console é outro problema: sem
+# isto, um console em cp850 imprime lixo mesmo com o script lido corretamente.
+try {
+    [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+    $OutputEncoding = [Console]::OutputEncoding
+} catch {
+    # Host sem console real (ISE, runspace embutido). Segue sem acento bonito.
+}
+
+# ─── endereço de rede ───────────────────────────────────────────────────────────
+# Resolve o IPv4 da interface física ativa — a que tem gateway padrão. Serve
+# para o -Lan fazer bind num endereço específico em vez de 0.0.0.0.
+#
+# Por que não 0.0.0.0: aquilo escuta em TODA interface, incluindo VPN
+# corporativa conectada, Hyper-V, WSL e Tailscale. Um bind num IP só limita a
+# exposição à rede que você realmente quis atender.
+#
+# AVISO, e ele vale mesmo com bind restrito: o llama-server serve HTTP puro com
+# `--api-key local` — uma chave que está publicada neste repositório. Não é
+# proteção nenhuma. Quem estiver na mesma rede lê seus prompts em texto claro e
+# consome sua GPU. Em rede doméstica é um risco que se aceita de olhos abertos;
+# em rede de escritório, compartilhada ou com convidados, use um túnel (SSH,
+# WireGuard) em vez de abrir a porta.
+function Get-LanIp {
+    # Adaptadores virtuais que NÃO servem como "a rede local".
+    $excluir = 'Hyper-V|Virtual|VMware|VirtualBox|WSL|Loopback|TAP-|Tailscale|WireGuard|VPN|Bluetooth'
+
+    if (-not (Get-Command Get-NetIPConfiguration -ErrorAction SilentlyContinue)) {
+        throw ('O cmdlet Get-NetIPConfiguration (modulo NetTCPIP) nao esta ' +
+               'disponivel neste host, entao -Lan nao consegue descobrir o IP. ' +
+               'Passe o endereco: $env:LLM_HOST = "192.168.3.51"')
+    }
+
+    $cfgs = @(
+        Get-NetIPConfiguration -ErrorAction Stop | Where-Object {
+            $_.IPv4DefaultGateway -and
+            $_.NetAdapter -and
+            $_.NetAdapter.Status -eq 'Up' -and
+            $_.InterfaceAlias -notmatch $excluir -and
+            $_.NetAdapter.InterfaceDescription -notmatch $excluir
+        }
+    )
+
+    # Menor métrica de interface = a rota que o Windows realmente prefere.
+    $escolhido = $cfgs |
+        Sort-Object { if ($_.NetIPv4Interface) { $_.NetIPv4Interface.InterfaceMetric } else { [int]::MaxValue } } |
+        Select-Object -First 1
+
+    if (-not $escolhido) {
+        # Falha FECHADA, de propósito. Cair para 0.0.0.0 aqui exporia o modelo
+        # em interfaces que o usuário nunca pediu — o oposto do que -Lan quer.
+        throw ('Nao encontrei interface fisica ativa com gateway padrao. ' +
+               'Passe o endereco explicitamente: $env:LLM_HOST = "192.168.3.51"')
+    }
+
+    $ip = @($escolhido.IPv4Address)[0].IPAddress
+    if (-not $ip) { throw "A interface '$($escolhido.InterfaceAlias)' nao tem IPv4." }
+    $ip
+}
+
 # ─── ajustes ──────────────────────────────────────────────────────────────────
 $Port           = if ($env:LLM_PORT) { [int]$env:LLM_PORT } else { 8080 }
-$BindHost       = '127.0.0.1'   # só local. 0.0.0.0 exporia o modelo na rede.
+# Padrão: só local. Duas formas de abrir para a rede, ambas explícitas —
+#   -Lan                      bind no IP da interface ativa (preferido)
+#   $env:LLM_HOST = '<ip>'    bind no endereço que você escolher
+# LLM_HOST aceita 0.0.0.0 se você insistir, mas leia o aviso em Get-LanIp.
+$BindHost       = if ($Lan) {
+    Get-LanIp
+} elseif ($env:LLM_HOST) {
+    $env:LLM_HOST
+} else {
+    '127.0.0.1'
+}
+# Endereço que ESTE script usa para falar com o servidor (health check, ask).
+# Com bind em 0.0.0.0, pedir http://0.0.0.0:8080 é frágil — sonde 127.0.0.1.
+# Com bind num IP específico, sonde esse IP: o servidor NÃO responde em
+# localhost nesse caso.
+$ProbeHost      = if ($BindHost -in @('0.0.0.0', '::', '*')) { '127.0.0.1' } else { $BindHost }
 $DefaultProfile = 'agent'
+
+# Por SSH, destacar não é opção — é a única forma do servidor sobreviver. O
+# sshd põe a sessão num job object e mata tudo no logout. Sem isto, `start`
+# reporta sucesso e o servidor morre junto com o comando que o subiu.
+if (-not $Detached -and $env:SSH_CONNECTION) {
+    $Detached = $true
+}
 
 $Root    = Join-Path $env:LOCALAPPDATA 'llm-server'
 $BinDir  = Join-Path $Root 'llama.cpp'
@@ -78,26 +213,125 @@ $Headers = @{ 'Content-Type' = 'application/json'; 'Authorization' = "Bearer $Ap
 # Tools = o modelo emite tool_calls estruturado, ou seja: serve como AGENTE.
 # Testado no equivalente MLX: Qwen2.5-Coder emite a tag errada (<tools> em vez de
 # <tool_call>) e o tool_calls volta null. O fine-tune para código degradou isso.
+#
+# Os tok/s das descrições valem para ESTA GPU, medidos com `bench`. Números do
+# lado macOS (~19 tok/s de geração, ~176 de prefill) são de um MacBook Air M4
+# com MLX e não se transferem: aqui o mesmo Qwen3-8B faz ~73 tok/s e o 4B ~110,
+# com o modelo inteiro na VRAM. Herdar número de outra máquina foi exatamente o
+# erro que essas descrições carregaram até serem medidas — inclusive na RELAÇÃO
+# entre elas, que afirmava "quase 2x" quando o medido é 1,5x.
+#
+# ExtraArgs = flags que só fazem sentido para aquele modelo. Todo perfil declara
+# o campo, mesmo vazio: sob Set-StrictMode, ler propriedade ausente de um
+# pscustomobject é erro — a mesma armadilha do campo opcional que derrubou os
+# perfis sem flags no lado macOS (veja docs/06-troubleshooting.md). Vale igual
+# para CpuMoe e RamGB, adicionados depois: TODO perfil declara os dois.
+#
+# CpuMoe = quantas das 48 camadas têm os tensores de expert mantidos na RAM do
+# sistema em vez da VRAM (flag --n-cpu-moe). Só faz sentido em modelo MoE; nos
+# densos é 0. Ver o comentário do perfil `moe` para o porquê.
+#
+# RamGB = RAM do SISTEMA que o processo precisa além da VRAM. Nos perfis densos
+# é quase nada (o peso todo vai para a GPU); no `moe` é o número que manda.
+#
+# File = nome do .gguf baixado direto para $ModelDir, em vez de resolvido por
+# -hf. Vazio significa "use -hf". Existe porque o -hf NÃO resolve os quants
+# dinâmicos da Unsloth (UD-Q3_K_XL e afins): ele casa a tag por nome de quant
+# padrão, não acha, e — isto é o perigoso — em vez de falhar SOBE EM ROUTER
+# MODE sem modelo nenhum. Servidor no ar, HTTP respondendo, zero byte baixado,
+# status de saída 0. Um `bench` contra isso mede o nada.
+# Quando File está preenchido, o download é curl (resumível) e o start usa -m.
+#
+# --reasoning off nos dois Qwen3: eles pensam por padrão, e o raciocínio consome
+# a cota de max_tokens ANTES de gerar resposta. Um cliente que peça poucos
+# tokens recebe content vazio com finish_reason "stop" e nenhum erro — falha
+# silenciosa medida na prática (112 tokens para responder "OK", ~98 deles em
+# reasoning_content). É o equivalente ao --chat-template-args
+# {"enable_thinking":false} que o llm-server.command usa no macOS; sem isto as
+# duas plataformas servem o MESMO modelo com comportamento diferente.
 $Profiles = @(
     [pscustomobject]@{
         Name = 'agent'; Repo = 'Qwen/Qwen3-8B-GGUF'; Quant = 'Q4_K_M'
-        FileGB = 5.03; Ctx = 16384; VramGB = 6.24; Tools = $true
-        Desc = 'Qwen3 8B. Tool calling validado (ciclo completo), ~19 tok/s. Melhor qualidade com tools. Padrao.'
+        FileGB = 5.03; Ctx = 16384; VramGB = 6.24; RamGB = 0.5; CpuMoe = 0; Tools = $true
+        File = ''
+        ExtraArgs = @('--reasoning', 'off')
+        Desc = 'Qwen3 8B. Tool calling validado (ciclo completo). ~73 tok/s de geracao e ~400 de prefill nesta 3060 Ti. Padrao.'
+    },
+    # O único MoE da lista, e o único perfil que quebra a regra "tem de caber na
+    # VRAM". Ele pode quebrá-la porque é MoE: dos 30,5 B de parâmetros, ~29 B
+    # estão nos experts e só 8 dos 128 experts são lidos por token. O resto —
+    # atenção, embeddings, router — são ~1,5 B, e é isso que precisa estar na
+    # GPU de verdade, porque é lido em TODA passagem.
+    #
+    # --n-cpu-moe N mantém os tensores de expert das N primeiras camadas na RAM
+    # do sistema. As demais ficam na VRAM junto com atenção, embeddings e KV.
+    #
+    # Ctx 16384 e --n-cpu-moe 36. Os dois números saíram de uma matriz medida,
+    # e nenhum é o que a intuição sugere:
+    #
+    #   ctx  n-cpu-moe   geracao   prefill   RAM livre   VRAM
+    #   16k     40        24,4      595       0,17 GB    5171 MiB
+    #   32k     40        ~4,8       —        0,27 GB    6058 MiB
+    #   32k     36         9,3      120       2,82 GB    7017 MiB
+    #   16k     36        26,6      424       2,77 GB    6169 MiB   <- este
+    #
+    # Duas lições. A primeira: 40 era desperdício. Baixar para 36 traz 4 camadas
+    # de expert de volta à GPU, usando VRAM que estava parada, e devolve 2,6 GB
+    # de RAM — a margem que antes era 0,17 GB, ou seja, nenhuma.
+    #
+    # A segunda: 32k de contexto NÃO cabe em throughput, mesmo cabendo em
+    # memória. O prefill despenca para 120 tok/s. A causa não é o cache KV, que
+    # vive na VRAM e é barato aqui (48 KB/token em q8_0): são os buffers de
+    # computação do lado da CPU, que crescem com o contexto e disputam a RAM
+    # com os experts.
+    #
+    # Se um cliente reclamar de "exceeds the available context size", o
+    # conserto é quase sempre no CLIENTE, não aqui. Medido: um pedido de
+    # landing page tinha 552 tokens de conteúdo dentro de 23.334 de requisição
+    # — o resto era system prompt e skills. Subir a janela para acomodar isso
+    # troca 5x de prefill por espaço que o prompt inflado consome de qualquer
+    # jeito. Se ainda assim precisar da janela numa sessão:
+    #   $env:LLM_CTX=32768; .\llm-server.ps1 restart moe -Lan
+    #
+    # Ajuste N pela sua folga: DIMINUIR N traz experts de volta para a GPU e
+    # acelera, até a VRAM encostar em ~7,5 GB. AUMENTAR alivia a RAM. Se a
+    # máquina começar a paginar, aumente — mas note que aqui paginar não é
+    # "fica lento": são ~1,3 GB de experts lidos POR TOKEN, e puxar isso do SSD
+    # derruba a geração para 1-2 tok/s. O modelo deixa de ser usável.
+    #
+    # KV de 48 KB/token em q8_0 (48 camadas x 4 kv-heads x 128 head_dim): a
+    # atenção é GQA agressiva, 4 kv-heads contra 32 de query. É o que faz 16k
+    # custar só 0,75 GB — o Qwen3-8B denso gasta 1,2 GB no mesmo contexto.
+    #
+    # Sem --reasoning off de propósito: o -Instruct nao e um modelo de
+    # raciocinio, entao nao ha o que desligar — diferente dos dois Qwen3 base.
+    [pscustomobject]@{
+        Name = 'moe'; Repo = 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF'; Quant = 'UD-Q3_K_XL'
+        FileGB = 12.9; Ctx = 16384; VramGB = 6.2; RamGB = 6.9; CpuMoe = 36; Tools = $true
+        File = 'Qwen3-Coder-30B-A3B-Instruct-UD-Q3_K_XL.gguf'
+        ExtraArgs = @()
+        Desc = 'Qwen3-Coder 30B-A3B (MoE, 3B ativos). Tool calling validado e entrega feature (test-feature.py) onde o 8B falha. 26,6 tok/s de geracao, 424 de prefill. Janela maior: $env:LLM_CTX=32768, mas custa 5x no prefill.'
     },
     [pscustomobject]@{
         Name = 'fast'; Repo = 'bartowski/Qwen2.5-Coder-7B-Instruct-GGUF'; Quant = 'Q4_K_M'
-        FileGB = 4.68; Ctx = 16384; VramGB = 5.7; Tools = $false
+        FileGB = 4.68; Ctx = 16384; VramGB = 5.7; RamGB = 0.5; CpuMoe = 0; Tools = $false
+        File = ''
+        ExtraArgs = @()
         Desc = 'Qwen2.5 Coder 7B. Escreve codigo melhor, mas NAO serve como agente. Ideal para chat/edit no VSCode.'
     },
     [pscustomobject]@{
         Name = 'quality'; Repo = 'bartowski/Qwen2.5-Coder-14B-Instruct-GGUF'; Quant = 'Q4_K_M'
-        FileGB = 8.99; Ctx = 8192; VramGB = 9.6; Tools = $false
+        FileGB = 8.99; Ctx = 8192; VramGB = 9.6; RamGB = 0.5; CpuMoe = 0; Tools = $false
+        File = ''
+        ExtraArgs = @()
         Desc = 'Qwen2.5 Coder 14B. NAO CABE nos 8 GB: parte das camadas vai para a CPU e fica lento. Use so se aceitar a queda.'
     },
     [pscustomobject]@{
         Name = 'tiny'; Repo = 'Qwen/Qwen3-4B-GGUF'; Quant = 'Q4_K_M'
-        FileGB = 2.50; Ctx = 32768; VramGB = 4.1; Tools = $true
-        Desc = 'Qwen3 4B. Tool calling validado e ~33 tok/s — quase 2x o 8B. Cabe com folga em 8 GB. Comece por este.'
+        FileGB = 2.50; Ctx = 32768; VramGB = 4.1; RamGB = 0.5; CpuMoe = 0; Tools = $true
+        File = ''
+        ExtraArgs = @('--reasoning', 'off')
+        Desc = 'Qwen3 4B. Tool calling validado (ciclo completo). ~110 tok/s de geracao e ~575 de prefill: 1,5x o 8B, nao 2x. Cabe com folga em 8 GB.'
     }
 )
 
@@ -143,6 +377,88 @@ function Get-VramInfo {
     } catch { $null }
 }
 
+# RAM do sistema, em GB. Irrelevante para os perfis densos — o peso deles vive
+# na VRAM — mas é o número que decide se o perfil `moe` sobe ou pagina.
+#
+# FreeGB vem de FreePhysicalMemory (KB), que é a memória de fato ociosa. Não
+# confundir com "disponível" do Gerenciador de Tarefas, que soma cache
+# descartável: o llama.cpp consegue usar parte disso, então o valor real
+# utilizável fica ENTRE os dois. Por isso os avisos abaixo alertam em vez de
+# abortar.
+function Get-RamInfo {
+    try {
+        $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+        [pscustomobject]@{
+            TotalGB = [math]::Round($os.TotalVisibleMemorySize / 1MB, 1)
+            FreeGB  = [math]::Round($os.FreePhysicalMemory / 1MB, 1)
+        }
+    } catch { $null }
+}
+
+# Sobe o servidor FORA da sessão atual, via Agendador de Tarefas.
+#
+# O problema que isto resolve: um processo iniciado por SSH morre quando a
+# sessão fecha. O Windows põe a sessão inteira num job object e derruba o job
+# no logout — filho de Start-Process vai junto. Pior, isso é invisível: o
+# health check do `start` passa antes de a sessão terminar, o script reporta
+# "no ar", e o servidor já morreu quando você volta.
+#
+# O Agendador é o caminho limpo porque o serviço dele é quem cria o processo:
+# nasce fora do nosso job object. E com LogonType Interactive ele roda na
+# sessão do usuário logado — o que a CUDA precisa. Rodar como SYSTEM ou com S4U
+# colocaria o processo na sessão 0, sem acesso normal à GPU.
+#
+# Requer o usuário logado localmente na máquina. Se não estiver, a tarefa fica
+# pronta mas não inicia — é a contrapartida de manter o acesso à GPU.
+function Start-Detached([string]$exe, [string[]]$serverArgs) {
+    $nome = 'llm-server'
+
+    # Argumentos com espaço (caminhos) precisam de aspas na linha do Agendador.
+    $linha = ($serverArgs | ForEach-Object {
+        if ($_ -match '\s') { '"' + $_ + '"' } else { $_ }
+    }) -join ' '
+
+    # cmd /c faz o redirecionamento: a ação do Agendador não tem os parâmetros
+    # -RedirectStandard* do Start-Process, e sem log não há como diagnosticar.
+    $acao = New-ScheduledTaskAction -Execute 'cmd.exe' `
+        -Argument "/c `"`"$exe`" $linha > `"$LogFile`" 2> `"$LogFile.err`"`""
+
+    # UserId pelo SID, não por nome. Duas razões, ambas medidas nesta máquina:
+    # sob SSH o $env:USERDOMAIN vem 'WORKGROUP' enquanto a conta real é
+    # 'DESKTOP-XXXX\Admin', e o Agendador rejeita com "não foi feito mapeamento
+    # entre os nomes de conta e as identificações de segurança" — a mesma
+    # mensagem que o icacls dá em Windows pt-BR ao receber 'Administrators'.
+    # SID não tem tradução nem depende de como a sessão foi aberta.
+    $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    $principal = New-ScheduledTaskPrincipal -UserId $sid `
+        -LogonType Interactive -RunLevel Limited
+
+    # ExecutionTimeLimit 0 = sem limite. O padrão do Agendador é matar a tarefa
+    # em 3 dias, o que num servidor residente seria uma queda inexplicável.
+    $cfg = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries `
+        -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) `
+        -MultipleInstances IgnoreNew
+
+    Unregister-ScheduledTask -TaskName $nome -Confirm:$false -EA SilentlyContinue
+    Register-ScheduledTask -TaskName $nome -Action $acao -Principal $principal `
+        -Settings $cfg -Description 'llama-server residente (local-llm-lab)' | Out-Null
+    Start-ScheduledTask -TaskName $nome
+
+    # O Agendador retorna assim que dispara; o processo aparece um instante
+    # depois. Precisamos do PID dele, não do da tarefa.
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    while ($sw.Elapsed.TotalSeconds -lt 30) {
+        $proc = Get-Process llama-server -EA SilentlyContinue |
+                Sort-Object StartTime -Descending | Select-Object -First 1
+        if ($proc) {
+            Write-Dim "destacado via Agendador de Tarefas (tarefa '$nome', PID $($proc.Id))"
+            return $proc.Id
+        }
+        Start-Sleep -Milliseconds 500
+    }
+    $null
+}
+
 function Get-ServerProcess {
     if (-not (Test-Path $PidFile)) { return $null }
     $procId = Get-Content $PidFile -ErrorAction SilentlyContinue
@@ -168,6 +484,15 @@ function Get-CachePaths {
 }
 
 function Test-ModelDownloaded($prof) {
+    # Perfil com File vive em $ModelDir, fora do cache do Hugging Face. Checar
+    # o tamanho e não só a existência: um curl interrompido deixa arquivo
+    # parcial, e "existe" nesse caso é uma resposta errada.
+    if ($prof.File) {
+        $f = Join-Path $ModelDir $prof.File
+        if (-not (Test-Path $f)) { return $false }
+        return ((Get-Item $f).Length / 1GB) -ge ($prof.FileGB * 0.98)
+    }
+
     $needle = ($prof.Repo -split '/')[-1]
     foreach ($cache in (Get-CachePaths)) {
         # O blob baixado leva o nome do repo no diretório e o quant no arquivo;
@@ -255,6 +580,7 @@ function Invoke-Models {
             PERFIL  = $p.Name
             ARQUIVO = "$($p.FileGB) GB"
             VRAM    = "$($p.VramGB) GB"
+            RAM     = if ($p.CpuMoe -gt 0) { "$($p.RamGB) GB" } else { '-' }
             CTX     = $p.Ctx
             TOOLS   = if ($p.Tools) { 'sim' } else { 'nao' }
             ESTADO  = if (Test-ModelDownloaded $p) { 'baixado' } else { 'ausente' }
@@ -266,13 +592,16 @@ function Invoke-Models {
     foreach ($p in $Profiles) { Write-Dim "  $($p.Name.PadRight(8)) $($p.Desc)" }
 
     $vram = Get-VramInfo
+    $ram  = Get-RamInfo
     Write-Host ''
     if ($vram) {
         Write-Dim "Padrao: $DefaultProfile · GPU: $($vram.Name) $($vram.TotalGB) GB (livre $($vram.FreeGB) GB) · disco: $(Get-FreeDiskGB) GB"
     } else {
         Write-Warn2 'nvidia-smi indisponivel — rode: .\llm-server.ps1 setup'
     }
+    if ($ram) { Write-Dim "RAM do sistema: $($ram.TotalGB) GB (livre $($ram.FreeGB) GB)" }
     Write-Dim 'TOOLS=sim -> serve como agente (pi, Cline). TOOLS=nao -> so chat/edit.'
+    Write-Dim 'RAM=- -> o peso todo vive na VRAM. So o perfil MoE usa RAM do sistema.'
 }
 
 function Invoke-Vram {
@@ -280,20 +609,35 @@ function Invoke-Vram {
     $vram = Get-VramInfo
     if (-not $vram) { Write-Err2 'nvidia-smi nao encontrado.'; return }
 
+    $ram = Get-RamInfo
     Write-Host "  GPU: $($vram.Name)"
-    Write-Host "  total $($vram.TotalGB) GB · em uso $($vram.UsedGB) GB · livre $($vram.FreeGB) GB`n"
+    Write-Host "  total $($vram.TotalGB) GB · em uso $($vram.UsedGB) GB · livre $($vram.FreeGB) GB"
+    if ($ram) { Write-Host "  RAM: total $($ram.TotalGB) GB · livre $($ram.FreeGB) GB" }
+    Write-Host ''
 
     foreach ($p in $Profiles) {
-        $fits = $p.VramGB -le ($vram.TotalGB - 0.8)   # ~0.8 GB reservado ao desktop
+        # ~0.8 GB reservado ao desktop. Nos perfis MoE o VramGB ja e o valor
+        # DEPOIS do offload — nao o tamanho do arquivo.
+        $fits = $p.VramGB -le ($vram.TotalGB - 0.8)
+        if ($ram -and $p.CpuMoe -gt 0) { $fits = $fits -and ($p.RamGB -le ($ram.TotalGB - 4)) }
         $tag  = if ($fits) { 'cabe   ' } else { 'ESTOURA' }
         $col  = if ($fits) { 'Green' } else { 'Red' }
+        $como = if ($p.CpuMoe -gt 0) {
+            "(+ $($p.RamGB) GB de RAM: $($p.CpuMoe)/48 camadas de expert fora da GPU)"
+        } else {
+            "(modelo $($p.FileGB) GB + KV q8_0 em ctx $($p.Ctx))"
+        }
         Write-Host "  $($p.Name.PadRight(8)) $($p.VramGB) GB  " -NoNewline
         Write-Host $tag -ForegroundColor $col -NoNewline
-        Write-Host "  (modelo $($p.FileGB) GB + KV q8_0 em ctx $($p.Ctx))"
+        Write-Host "  $como"
     }
     Write-Host ''
-    Write-Dim 'Quando estoura, o llama.cpp joga camadas para a CPU: funciona, mas fica'
-    Write-Dim 'varias vezes mais lento. Prefira um perfil que caiba inteiro na VRAM.'
+    Write-Dim 'Num modelo DENSO, estourar a VRAM e desastre: o llama.cpp joga camadas'
+    Write-Dim 'inteiras para a CPU e cada token le todas elas. Prefira um que caiba.'
+    Write-Dim ''
+    Write-Dim 'Num MoE isso deixa de valer, e e o ponto do perfil `moe`: com 8 de 128'
+    Write-Dim 'experts ativos por token, deixar experts na RAM custa pouco. Ali a conta'
+    Write-Dim 'e -4 GB de RAM para o Windows, e o resto pode ser modelo.'
 }
 
 # ─── ciclo de vida ────────────────────────────────────────────────────────────
@@ -310,9 +654,72 @@ function Invoke-Pull($name) {
     }
     Write-Head "Baixando $($p.Name) — $($p.FileGB) GB"
     Write-Dim "$($p.Repo):$($p.Quant)"
+
+    # Perfil com File preenchido não passa pelo -hf: baixa o .gguf direto com
+    # curl. Ver o comentário de File nos perfis para o porquê — resumo: o -hf
+    # não resolve quant dinâmico da Unsloth e sobe em router mode sem modelo.
+    #
+    # curl.exe existe no Windows 10+ de fábrica. -C - retoma de onde parou, o
+    # que num arquivo de 13 GB não é luxo.
+    if ($p.File) {
+        New-Item -ItemType Directory -Force -Path $ModelDir | Out-Null
+        $destino = Join-Path $ModelDir $p.File
+        $url = "https://huggingface.co/$($p.Repo)/resolve/main/$($p.File)"
+        Write-Dim $url
+        & curl.exe -L -C - --retry 5 --progress-bar -o $destino $url
+        if (Test-Path $destino) {
+            $gb = [math]::Round((Get-Item $destino).Length / 1GB, 2)
+            # Um arquivo truncado carrega e falha estranho depois; melhor pegar aqui.
+            if ($gb -lt ($p.FileGB * 0.98)) {
+                Write-Err2 "Baixou so $gb GB de ~$($p.FileGB) GB. Rode o pull de novo: o curl retoma."
+                exit 1
+            }
+            Write-Ok "Pesos prontos — $gb GB em $destino"
+        } else {
+            Write-Err2 'O curl nao gravou o arquivo.'
+            exit 1
+        }
+        return
+    }
+
     # O próprio llama-server baixa via -hf; --no-warmup evita gastar tempo depois.
-    & $exe -hf "$($p.Repo):$($p.Quant)" --no-warmup -c 512 -ngl 0 --port 0 2>&1 |
-        Select-String -Pattern 'download|%|error' | Select-Object -Last 5
+    #
+    # A porta NÃO pode ser 0. Parece inofensivo — "não vou servir, só baixar" —
+    # mas o llama-server valida a porta ANTES de tocar no download e sai na hora,
+    # deixando só o diretório vazio no cache do Hugging Face. Pior: sai com
+    # status 0, então nada acusa a falha e o `start` seguinte rebaixa tudo.
+    # Medido na prática: 12,9 GB que nunca começaram.
+    #
+    # Daí uma porta alta de verdade, e diferente de $Port para não colidir com um
+    # servidor já no ar. O processo sobe, baixa e é derrubado logo abaixo.
+    $pullPort = $Port + 19   # 8099 no padrão
+    $proc = Start-Process -FilePath $exe -PassThru -NoNewWindow -ArgumentList @(
+        '-hf', "$($p.Repo):$($p.Quant)"
+        '--no-warmup', '-c', '512', '-ngl', '0'
+        '--port', "$pullPort"
+    )
+
+    # Progresso pelo tamanho no disco: a barra do llama-server vai para o
+    # console dele, não para cá, e um pipe engoliria tudo até o fim.
+    $alvo = $p.FileGB
+    while (-not $proc.HasExited) {
+        Start-Sleep -Seconds 5
+        $gb = 0
+        foreach ($cache in (Get-CachePaths)) {
+            $dir = Join-Path $cache ("models--" + ($p.Repo -replace '/', '--'))
+            if (Test-Path $dir) {
+                $s = (Get-ChildItem $dir -Recurse -File -EA SilentlyContinue |
+                      Measure-Object Length -Sum).Sum
+                if ($s) { $gb += $s / 1GB }
+            }
+        }
+        Write-Host ("`r  {0,6:N2} / {1} GB" -f $gb, $alvo) -NoNewline -ForegroundColor DarkGray
+        # O download termina antes do processo: ele segue e sobe o servidor.
+        if ($gb -ge ($alvo * 0.99)) { break }
+    }
+    Write-Host ''
+    if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -EA SilentlyContinue }
+
     if (Test-ModelDownloaded $p) { Write-Ok 'Pesos prontos.' } else { Write-Warn2 'Nao confirmei o download; tente start.' }
 }
 
@@ -327,7 +734,7 @@ function Wait-Ready([int]$procId, [string]$alias, [int]$timeoutSec = 420) {
             Write-Host ''; return 'died'
         }
         try {
-            Invoke-RestMethod "http://${BindHost}:$Port/v1/chat/completions" -Method Post `
+            Invoke-RestMethod "http://${ProbeHost}:$Port/v1/chat/completions" -Method Post `
                 -Headers $Headers -Body $body -TimeoutSec 10 | Out-Null
             Write-Host ''
             return [int]$sw.Elapsed.TotalSeconds
@@ -365,8 +772,35 @@ function Invoke-Start($name) {
         Write-Warn2 "ou use um perfil menor: .\llm-server.ps1 start tiny"
     }
 
+    # Só o perfil MoE depende de RAM do sistema; nos densos RamGB e 0.5 e este
+    # bloco nunca dispara. Aviso, nao aborto: FreePhysicalMemory subestima o que
+    # o llama.cpp consegue usar (ver Get-RamInfo).
+    $ram = Get-RamInfo
+    if ($ram -and $p.RamGB -gt 1 -and $p.RamGB -gt $ram.FreeGB) {
+        Write-Warn2 "Perfil pede ~$($p.RamGB) GB de RAM do sistema e ha $($ram.FreeGB) GB livres de $($ram.TotalGB) GB."
+        Write-Warn2 'Se faltar, o Windows pagina os experts para o disco e a geracao despenca'
+        Write-Warn2 'de dezenas para poucos tok/s. Feche o navegador, ou traga experts de volta'
+        Write-Warn2 "para a GPU baixando o --n-cpu-moe: `$env:LLM_CPU_MOE=32; .\llm-server.ps1 start $($p.Name)"
+    }
+
     Write-Head "Subindo $($p.Name) em http://${BindHost}:$Port"
     Write-Dim "$($p.Repo):$($p.Quant) · ctx $($p.Ctx) · alias $($p.Name)"
+
+    # Exposição na rede é sempre anunciada. Silêncio aqui seria a forma mais
+    # fácil de alguém servir o modelo sem perceber.
+    if ($BindHost -ne '127.0.0.1' -and $BindHost -ne 'localhost') {
+        Write-Warn2 "Servindo na REDE em $BindHost — nao apenas nesta maquina."
+        Write-Dim   '    HTTP puro, e a chave `local` esta publicada no repo: quem'
+        Write-Dim   '    estiver na rede le seus prompts e usa sua GPU.'
+        if ($BindHost -in @('0.0.0.0', '::', '*')) {
+            Write-Warn2 '    0.0.0.0 escuta em TODA interface: VPN, Hyper-V, WSL, Tailscale.'
+            Write-Dim   '    Prefira -Lan, que faz bind so no IP da rede local.'
+        }
+        Write-Dim   '    O firewall ainda precisa liberar a porta, restrita a sua faixa:'
+        Write-Dim   "    New-NetFirewallRule -DisplayName 'llama-server LAN' -Direction Inbound ``"
+        Write-Dim   "      -Protocol TCP -LocalPort $Port -Action Allow -Profile Private ``"
+        Write-Dim   '      -RemoteAddress 192.168.3.0/24'
+    }
 
     # -ngl 999  manda todas as camadas para a VRAM (o llama.cpp reduz se nao couber)
     # -ctk/-ctv q8_0  corta o cache KV pela metade: e o que faz 16k de contexto
@@ -376,10 +810,24 @@ function Invoke-Start($name) {
     #           (ja e o padrao nas versoes atuais, explicito aqui de proposito)
     # NAO chamar esta variavel de $args: no PowerShell $args e automatica e
     # reservada; atribuir a ela dentro de funcao gera comportamento estranho.
+    # Contexto sobrescritível: a janela é a troca mais frequente que se quer
+    # fazer sem editar o arquivo, e o custo dela em throughput é grande o
+    # bastante para não virar padrão. Ver o comentário do perfil `moe`.
+    $ctx = if ($env:LLM_CTX) { [int]$env:LLM_CTX } else { $p.Ctx }
+    if ($ctx -ne $p.Ctx) { Write-Dim "contexto sobrescrito: $ctx (perfil pede $($p.Ctx))" }
+
+    # -m com caminho local, ou -hf para os perfis que o -hf resolve. Ver o
+    # comentario do campo File nos perfis.
+    $fonte = if ($p.File) {
+        @('-m', (Join-Path $ModelDir $p.File))
+    } else {
+        @('-hf', "$($p.Repo):$($p.Quant)")
+    }
+
     $serverArgs = @(
-        '-hf', "$($p.Repo):$($p.Quant)"
+        $fonte
         '--host', $BindHost, '--port', "$Port"
-        '-c', "$($p.Ctx)"
+        '-c', "$ctx"
         '-ngl', '999'
         '-ctk', 'q8_0', '-ctv', 'q8_0'
         '-fa', 'on'
@@ -390,12 +838,38 @@ function Invoke-Start($name) {
         '--api-key', 'local'
     )
 
-    $proc = Start-Process -FilePath $exe -ArgumentList $serverArgs -PassThru -NoNewWindow `
-                          -RedirectStandardOutput $LogFile -RedirectStandardError "$LogFile.err"
-    $proc.Id  | Set-Content $PidFile
-    $p.Name   | Set-Content $ProfFile
+    # --n-cpu-moe: só em perfil MoE. Ajustável sem editar o script, porque este é
+    # o botão que se gira para trocar VRAM por RAM na sua máquina concreta —
+    # veja o comentário do perfil `moe` para a conta.
+    $cpuMoe = if ($env:LLM_CPU_MOE) { [int]$env:LLM_CPU_MOE } else { $p.CpuMoe }
+    if ($cpuMoe -gt 0) {
+        $serverArgs += @('--n-cpu-moe', "$cpuMoe")
+        Write-Dim "experts na RAM: $cpuMoe de 48 camadas (ajuste com `$env:LLM_CPU_MOE)"
+    }
 
-    $r = Wait-Ready $proc.Id $p.Name
+    # Flags do perfil (ex.: --reasoning off nos Qwen3). Array vazio some aqui
+    # sem quebrar nada — mas o campo tem de existir em TODO perfil, senao o
+    # StrictMode aborta ao ler propriedade ausente.
+    if ($p.ExtraArgs -and $p.ExtraArgs.Count -gt 0) {
+        $serverArgs += $p.ExtraArgs
+        Write-Dim "flags do perfil: $($p.ExtraArgs -join ' ')"
+    }
+
+    if ($Detached) {
+        $procId = Start-Detached $exe $serverArgs
+        if (-not $procId) {
+            Write-Err2 'A tarefa agendada subiu mas nenhum llama-server apareceu.'
+            Get-Content "$LogFile.err" -Tail 20 -ErrorAction SilentlyContinue
+            exit 1
+        }
+    } else {
+        $procId = (Start-Process -FilePath $exe -ArgumentList $serverArgs -PassThru -NoNewWindow `
+                                 -RedirectStandardOutput $LogFile -RedirectStandardError "$LogFile.err").Id
+    }
+    $procId  | Set-Content $PidFile
+    $p.Name  | Set-Content $ProfFile
+
+    $r = Wait-Ready $procId $p.Name
     switch ($r) {
         'died' {
             Write-Err2 'O servidor morreu ao subir. Ultimas linhas:'
@@ -403,7 +877,7 @@ function Invoke-Start($name) {
             Remove-Item $PidFile, $ProfFile -ErrorAction SilentlyContinue
             exit 1
         }
-        'timeout' { Write-Warn2 "Sem resposta no tempo limite. Processo vivo (PID $($proc.Id)). Veja: .\llm-server.ps1 logs" }
+        'timeout' { Write-Warn2 "Sem resposta no tempo limite. Processo vivo (PID $procId). Veja: .\llm-server.ps1 logs" }
         default {
             Write-Ok "No ar em ${r}s — http://${BindHost}:$Port"
             Show-Usage $p
@@ -435,6 +909,19 @@ function Show-Usage($p) {
 
 function Invoke-Stop {
     $proc = Get-ServerProcess
+
+    # Fallback pelo nome do processo: com -Detached o PID no arquivo veio de uma
+    # busca, e um `stop` de outra sessão (ou depois de perder o PidFile) não
+    # pode deixar 5 GB de VRAM presos só porque não achou o bilhete.
+    if (-not $proc) {
+        $proc = Get-Process llama-server -EA SilentlyContinue | Select-Object -First 1
+        if ($proc) { Write-Dim "PID nao registrado; achei o llama-server pelo nome." }
+    }
+
+    # A tarefa agendada some junto: deixá-la registrada faria o servidor
+    # ressuscitar no próximo Start-ScheduledTask acidental, e polui o Agendador.
+    Unregister-ScheduledTask -TaskName 'llm-server' -Confirm:$false -EA SilentlyContinue
+
     if ($proc) {
         Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
         Start-Sleep -Milliseconds 700
@@ -492,7 +979,7 @@ function Invoke-Ask([string]$question) {
 
     $sw = [Diagnostics.Stopwatch]::StartNew()
     try {
-        $r = Invoke-RestMethod "http://${BindHost}:$Port/v1/chat/completions" -Method Post `
+        $r = Invoke-RestMethod "http://${ProbeHost}:$Port/v1/chat/completions" -Method Post `
                  -Headers $Headers -Body $body -TimeoutSec 1800
     } catch {
         Write-Err2 "Falhou: $($_.Exception.Message)"
@@ -511,11 +998,69 @@ function Invoke-Ask([string]$question) {
     Write-Dim ("`n[{0:N1}s{1}]" -f $s, $rate)
 }
 
-function Invoke-Bench {
+function Get-Median([double[]]$valores) {
+    $s = @($valores | Sort-Object)
+    if ($s.Count -eq 0) { return 0 }
+    if ($s.Count % 2) { return $s[[int](($s.Count - 1) / 2)] }
+    ($s[$s.Count / 2 - 1] + $s[$s.Count / 2]) / 2
+}
+
+function Invoke-Bench([int]$rodadas = 4) {
     if (-not (Get-ServerProcess)) { Write-Err2 'Servidor parado. Suba com: .\llm-server.ps1 start'; exit 1 }
-    $cur = if (Test-Path $ProfFile) { Get-Content $ProfFile } else { '?' }
-    Write-Head "Medindo nesta maquina (perfil $cur)"
-    Invoke-Ask 'Implemente quicksort em Python com comentarios curtos.' | Out-Null
+    $alias = if (Test-Path $ProfFile) { Get-Content $ProfFile } else { $DefaultProfile }
+
+    Write-Head "Medindo nesta maquina (perfil $alias · $rodadas rodadas, 1a descartada)"
+
+    # Uma amostra unica nao mede nada: a primeira chamada paga cache frio e
+    # qualquer variacao passa por resultado. Daí repetir e usar a mediana.
+    #
+    # Os numeros vem do bloco `timings` do llama-server, nao do cronometro
+    # daqui. Isso separa prefill de geracao — medir tokens/tempo-total mistura
+    # os dois e faz a taxa cair junto com o tamanho do prompt, que foi como o
+    # numero antigo destas descricoes nasceu errado.
+    $gen = New-Object 'System.Collections.Generic.List[double]'
+    $pre = New-Object 'System.Collections.Generic.List[double]'
+
+    for ($i = 1; $i -le $rodadas; $i++) {
+        # Sufixo variavel: sem isso o prompt cache serve a resposta e o bench
+        # passa a medir o cache, nao o modelo.
+        $body = @{
+            model       = $alias
+            messages    = @(@{ role = 'user'; content = "Implemente quicksort em Python com comentarios curtos. (v$i)" })
+            max_tokens  = 600
+            temperature = 0
+        } | ConvertTo-Json -Depth 5
+
+        try {
+            $r = Invoke-RestMethod "http://${ProbeHost}:$Port/v1/chat/completions" -Method Post `
+                     -Headers $Headers -Body $body -TimeoutSec 1800
+        } catch {
+            Write-Err2 "Rodada $i falhou: $($_.Exception.Message)"
+            exit 1
+        }
+
+        # Servidores antigos podem nao devolver `timings`; sob StrictMode, ler a
+        # propriedade ausente aborta. Checar antes.
+        $t = if ($r.PSObject.Properties.Name -contains 'timings') { $r.timings } else { $null }
+        if (-not $t) {
+            Write-Warn2 'Este llama-server nao devolve `timings`; sem separar prefill de geracao.'
+            Write-Dim  "  rodada $i : $($r.usage.completion_tokens) tokens gerados"
+            continue
+        }
+
+        $descartada = ($i -eq 1)
+        if (-not $descartada) { $gen.Add($t.predicted_per_second); $pre.Add($t.prompt_per_second) }
+        Write-Dim ("  [{0}] geracao {1,6:N1} tok/s · prefill {2,7:N1} tok/s · {3,3} tokens{4}" -f `
+                   $i, $t.predicted_per_second, $t.prompt_per_second, $t.predicted_n,
+                   $(if ($descartada) { '  (descartada)' } else { '' }))
+    }
+
+    if ($gen.Count -gt 0) {
+        Write-Ok  ("geracao: mediana {0:N1} tok/s (min {1:N1} · max {2:N1})" -f `
+                   (Get-Median $gen.ToArray()), ($gen | Measure-Object -Minimum).Minimum, ($gen | Measure-Object -Maximum).Maximum)
+        Write-Ok  ("prefill: mediana {0:N1} tok/s" -f (Get-Median $pre.ToArray()))
+        Write-Dim 'Compare com a descricao do perfil em `models` — se divergir, a descricao esta velha.'
+    }
 }
 
 function Invoke-Help {
@@ -531,9 +1076,27 @@ function Invoke-Help {
   models           perfis e o que ja foi baixado
   pull <perfil>    so baixa os pesos
   bench            mede tokens/s reais aqui
-  vram             orcamento de VRAM por perfil
+  vram             orcamento de VRAM (e de RAM, no perfil MoE) por perfil
+
+MoE:
+  $env:LLM_CPU_MOE=N   quantas das 48 camadas mantem os experts na RAM.
+                       Menor = mais rapido e mais VRAM; maior = alivia a RAM.
+                       Padrao do perfil `moe`: 40.
+
+Rede:
+  -Lan             serve para a rede local, com bind so no IP desta maquina
+                   (o padrao e 127.0.0.1: nada sai desta maquina)
+
+Sessao:
+  -Detached        sobe via Agendador de Tarefas, para o servidor sobreviver ao
+                   fechamento do terminal. Automatico quando o script roda por
+                   SSH, onde o processo morreria junto com a sessao.
+                   Exige o usuario logado na maquina (a CUDA precisa da sessao).
 '@ | Write-Host
     Write-Dim "Porta: $Port (altere com `$env:LLM_PORT=8081) · escuta so em $BindHost"
+    if ($BindHost -eq '127.0.0.1') {
+        Write-Dim 'Para atender outra maquina: .\llm-server.ps1 start agent -Lan'
+    }
 }
 
 # ─── entrada ──────────────────────────────────────────────────────────────────

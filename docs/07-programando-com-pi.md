@@ -98,6 +98,32 @@ O prompt cache derruba isso para ~1 s em prefixo repetido (22×) — é o que to
 
 **Consequência prática:** modelo local não é para trabalho interativo de vaivém rápido. É para tarefas que você delega e vai fazer outra coisa.
 
+### Servindo de outra máquina, com um modelo maior
+
+Os números acima são do Air rodando o modelo. Se você tem uma máquina com GPU na rede, o quadro muda — e não só em velocidade.
+
+O perfil `moe` do Windows serve um **Qwen3-Coder-30B-A3B** numa RTX 3060 Ti de 8 GB (como isso cabe está em [escolher o modelo](02-escolher-modelo.md#a-exceção-moe)). Do Mac, é só apontar o provider:
+
+```bash
+pi --provider llama-remote --model moe
+```
+
+O provider `llama-remote` fica em `~/.pi/agent/models.json`, com `baseUrl` apontando para o IP da outra máquina e `apiKey: local`. O `.\windows\llm-clients-setup.ps1` configura o lado de lá.
+
+Do lado Windows, suba com `-Lan` e libere a porta:
+
+```powershell
+.\llm-server.ps1 start moe -Lan
+```
+
+O que você ganha não é principalmente velocidade — é **acerto**. Medido com `scripts/test-feature.py`: o `moe` implementa uma feature em 2 turnos; o `agent` (Qwen3-8B), que gera 3× mais rápido, não termina em 14. E o Air para de disputar RAM com o modelo, que num 16 GB é metade do problema.
+
+Duas armadilhas ao servir na rede:
+
+**O `model` é o ALIAS do perfil** (`moe`, `agent`, `tiny`), não o repo do Hugging Face. Em single-model mode o `llama-server` só responde ao que veio em `-a`.
+
+**`--api-key local` sobre HTTP puro não protege nada** — a chave está publicada neste repositório. Rede doméstica é risco que se aceita de olhos abertos; rede compartilhada, use um túnel.
+
 ---
 
 ## O que funciona bem

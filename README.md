@@ -59,7 +59,10 @@ windows/
   llm-clients-setup.ps1   configura pi e Continue
 scripts/
   test-tools.py           valida se um modelo faz tool calling de verdade
+  test-feature.py         valida se ele ENTREGA uma feature — criterio e o pytest
   check-links.py          confere links e âncoras desta documentação
+examples/
+  landing-page/           saida real e nao editada do perfil moe, com o que errou
 ```
 
 ### Documentação
@@ -101,7 +104,27 @@ Também medido nessa máquina: **prefill a ~176 tok/s** (3.517 tokens de prompt 
 
 O 4B roda ao **dobro** da velocidade do 8B e faz tool calling igualmente bem. Em hardware limitado, esse é o trade-off que importa — e é o oposto do reflexo "maior é melhor".
 
+**Hardware C** — Windows, RTX 3060 Ti (8 GB de VRAM) + 16 GB de RAM. Runtime: llama.cpp/CUDA.
+
+| perfil | modelo | geração | prefill | entrega a feature? |
+|---|---|---|---|---|
+| `moe` | Qwen3-Coder-30B-A3B (MoE) | 26,6 tok/s | 424 tok/s | ✅ 2 turnos |
+| `agent` | Qwen3-8B | **72,5 tok/s** | 393 tok/s | ❌ 14 turnos, 6 reescritas |
+| `tiny` | Qwen3-4B | **110,4 tok/s** | **575 tok/s** | não testado |
+
+Duas coisas contraintuitivas aqui, e as duas custaram medição:
+
+**Um MoE de 30 B roda numa GPU de 8 GB.** Só 8 dos 128 experts são lidos por token, então manter experts na RAM do sistema custa pouco — `--n-cpu-moe` põe a atenção na VRAM e os experts na RAM. Não vale para modelo denso: ali a mesma tentativa dá o precipício de 28× acima.
+
+**O modelo mais rápido é o que não entrega.** O `agent` gera 3× mais tokens por segundo, passa no teste de tool calling, e mesmo assim não fecha uma feature de trinta linhas — inverte uma condição e reescreve em volta do próprio bug seis vezes. É por isso que existe o `test-feature.py`: tok/s não prediz trabalho feito.
+
 Metodologia completa em [`docs/benchmarks.md`](docs/benchmarks.md).
+
+### Uma saída completa, sem edição
+
+[`examples/landing-page/`](examples/landing-page/) tem uma landing page inteira gerada pelo perfil `moe`: 7.432 tokens em 5 minutos, HTML válido do `<!DOCTYPE` ao `</html>`, nenhuma requisição saindo da rede local.
+
+O README de lá documenta o que ele **ignorou** com o mesmo cuidado — três das cinco diretrizes do prompt, incluindo as duas classes que o pedido citava pelo nome. É a lição deste repositório em forma visível: modelo local acerta a forma e perde o detalhe, sem avisar.
 
 ---
 
@@ -225,7 +248,7 @@ O `setup` **não** usa `winget install llama.cpp`: aquele pacote entrega build C
 
 Regra prática, nesta ordem:
 
-1. **Cabe na memória?** Se os pesos não couberem, nada mais importa — veja o precipício acima.
+1. **Cabe na memória?** Se os pesos não couberem, nada mais importa — veja o precipício acima. A exceção são modelos **MoE**, que ativam uma fração dos pesos por token e por isso toleram ficar parcialmente na RAM: é o perfil `moe` do Windows, um 30 B servido numa GPU de 8 GB.
 2. **Precisa chamar ferramentas?** Se sim, precisa de tool calling comprovado, não prometido.
 3. **Só então** pense em qualidade.
 

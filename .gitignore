@@ -24,3 +24,10 @@ resp.json
 .vscode/
 .idea/
 *.swp
+# Estado local de agentes. Nao ha comentario no fim da linha aqui de proposito:
+# o .gitignore nao suporta isso — o "#" viraria parte do padrao e a regra pararia
+# de casar, silenciosamente.
+#   .pi/   estado do pi (agents/, chains/)
+#   .atl/  estado do Agent Teams Lite (skill-registry.md)
+.pi/
+.atl/

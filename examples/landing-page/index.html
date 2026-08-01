@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BarberBook - Agendamento Inteligente para Barbearias</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    animation: {
+                        'fade-in': 'fadeIn 0.5s ease-in-out',
+                        'slide-up': 'slideUp 0.6s ease-out',
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: 0 },
+                            '100%': { opacity: 1 },
+                        },
+                        slideUp: {
+                            '0%': { opacity: 0, transform: 'translateY(20px)' },
+                            '100%': { opacity: 1, transform: 'translateY(0)' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            scroll-behavior: smooth;
+        }
+        .glass {
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+        }
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+        .testimonial-card {
+            transition: all 0.3s ease;
+        }
+        .testimonial-card:hover {
+            transform: scale(1.02);
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        .animate-slide-up {
+            animation: slideUp 0.6s ease-out;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+    <!-- Header -->
+    <header class="fixed w-full z-50 glass">
+        <div class="container mx-auto px-4 py-4 flex justify-between items-center">
+            <div class="flex items-center">
+                <div class="w-10 h-10 rounded-full bg-gradient-to-r from-purple-600 to-indigo-600 flex items-center justify-center">
+                    <i class="fas fa-scissors text-white text-xl"></i>
+                </div>
+                <span class="ml-3 text-xl font-bold">BarberBook</span>
+            </div>
+            
+            <nav class="hidden md:flex space-x-8">
+                <a href="#features" class="font-medium hover:text-purple-600 transition-colors">Recursos</a>
+                <a href="#testimonials" class="font-medium hover:text-purple-600 transition-colors">Depoimentos</a>
+                <a href="#pricing" class="font-medium hover:text-purple-600 transition-colors">Preços</a>
+                <a href="#faq" class="font-medium hover:text-purple-600 transition-colors">FAQ</a>
+            </nav>
+            
+            <div class="flex items-center space-x-4">
+                <button class="hidden md:block font-medium hover:text-purple-600 transition-colors">Entrar</button>
+                <button class="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-5 py-2 rounded-full font-medium hover:opacity-90 transition-opacity shadow-lg">
+                    Começar Grátis
+                </button>
+                <button class="md:hidden text-gray-700">
+                    <i class="fas fa-bars text-xl"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="pt-32 pb-20 px-4">
+        <div class="container mx-auto max-w-6xl">
+            <div class="flex flex-col md:flex-row items-center">
+                <div class="md:w-1/2 mb-12 md:mb-0 animate-slide-up">
+                    <h1 class="text-4xl md:text-5xl font-bold leading-tight mb-4">
+                        Agendamento Inteligente para <span class="text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-indigo-600">Barbearias</span>
+                    </h1>
+                    <p class="text-xl text-gray-600 mb-8 max-w-lg">
+                        Simplifique o agendamento de horários com nossa plataforma completa. Aumente sua produtividade e melhore a experiência do cliente.
+                    </p>
+                    <div class="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4">
+                        <button class="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-8 py-4 rounded-full font-medium hover:opacity-90 transition-opacity shadow-lg text-lg">
+                            Começar Grátis
+                        </button>
+                        <button class="border-2 border-gray-300 px-8 py-4 rounded-full font-medium hover:border-purple-600 transition-colors text-lg">
+                            Ver Demonstração
+                        </button>
+                    </div>
+                </div>
+                <div class="md:w-1/2 flex justify-center animate-fade-in">
+                    <div class="relative">
+                        <div class="w-80 h-80 rounded-full bg-gradient-to-r from-purple-500 to-indigo-500 opacity-20 absolute -top-6 -left-6"></div>
+                        <div class="relative bg-white rounded-2xl shadow-xl p-6 transform rotate-3">
+                            <div class="flex justify-between items-center mb-4">
+                                <div class="font-bold">Agendamento</div>
+                                <div class="text-sm bg-purple-100 text-purple-800 px-3 py-1 rounded-full">Hoje</div>
+                            </div>
+                            <div class="space-y-3">
+                                <div class="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                                    <div>
+                                        <div class="font-medium">Carlos Silva</div>
+                                        <div class="text-sm text-gray-500">Corte de Cabelo</div>
+                                    </div>
+                                    <div class="text-sm">10:30</div>
+                                </div>
+                                <div class="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                                    <div>
+                                        <div class="font-medium">Ana Oliveira</div>
+                                        <div class="text-sm text-gray-500">Barba</div>
+                                    </div>
+                                    <div class="text-sm">11:00</div>
+                                </div>
+                                <div class="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                                    <div>
+                                        <div class="font-medium">Roberto Santos</div>
+                                        <div class="text-sm text-gray-500">Corte + Barba</div>
+                                    </div>
+                                    <div class="text-sm">11:30</div>
+                                </div>
+                            </div>
+                            <div class="mt-6 flex justify-center">
+                                <button class="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-6 py-2 rounded-full font-medium">
+                                    Nova Marcação
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="py-20 bg-gray-100 px-4">
+        <div class="container mx-auto max-w-6xl">
+            <div class="text-center mb-16">
+                <h2 class="text-3xl md:text-4xl font-bold mb-4">Recursos que transformam sua barbearia</h2>
+                <p class="text-xl text-gray-600 max-w-2xl mx-auto">
+                    Tudo o que você precisa para gerenciar seu negócio com eficiência
+                </p>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                <!-- Feature 1 -->
+                <div class="feature-card bg-white rounded-2xl p-6 shadow-lg transition-all duration-300">
+                    <div class="w-12 h-12 rounded-full bg-purple-100 flex items-center justify-center mb-4">
+                        <i class="fas fa-calendar-check text-purple-600 text-xl"></i>
+                    </div>
+                    <h3 class="text-xl font-bold mb-2">Agendamento Online</h3>
+                    <p class="text-gray-600 mb-4">
+                        Clientes marcando horários diretamente pelo site ou app, com confirmação automática.
+                    </p>
+                    <a href="#" class="text-purple-600 font-medium flex items-center">
+                        Saiba mais
+                        <i class="fas fa-arrow-right ml-2 text-sm"></i>
+                    </a>
+                </div>
+                
+                <!-- Feature 2 -->
+                <div class="feature-card bg-white rounded-2xl p-6 shadow-lg transition-all duration-300">
+                    <div class="w-12 h-12 rounded-full bg-purple-100 flex items-center justify-center mb-4">
+                        <i class="fas fa-mobile-alt text-purple-600 text-xl"></i>
+                    </div>
+                    <h3 class="text-xl font-bold mb-2">App Mobile</h3>
+                    <p class="text-gray-600 mb-4">
+                        Aplicativo para clientes e barbeiros com notificações, lembretes e histórico de serviços.
+                    </p>
+                    <a href="#" class="text-purple-600 font-medium flex items-center">
+                        Saiba mais
+                        <i class="fas fa-arrow-right ml-2 text-sm"></i>
+                    </a>
+                </div>
+                
+                <!-- Feature 3 -->
+                <div class="feature-card bg-white rounded-2xl p-6 shadow-lg transition-all duration-300">
+                    <div class="w-12 h-12 rounded-full bg-purple-100 flex items-center justify-center mb-4">
+                        <i class="fas fa-chart-line text-purple-600 text-xl"></i>
+                    </div>
+                    <h3 class="text-xl font-bold mb-2">Relatórios Analíticos</h3>
+                    <p class="text-gray-600 mb-4">
+                        Métricas detalhadas sobre produtividade, clientes e receita para tomada de decisão.
+                    </p>
+                    <a href="#" class="text-purple-600 font-medium flex items-center">
+                        Saiba mais
+                        <i class="fas fa-arrow-right ml-2 text-sm"></i>
+                    </a>
+                </div>
+                
+                <!-- Feature 4 -->
+                <div class="feature-card bg-white rounded-2xl p-6 shadow-lg transition-all duration-300">
+                    <div class="w-12 h-12 rounded-full bg-purple-100 flex items-center justify-center mb-4">
+                        <i class="fas fa-users text-purple-600 text-xl"></i>
+                    </div>
+                    <h3 class="text-xl font-bold mb-2">Gestão de Funcionários</h3>
+                    <p class="text-gray-600 mb-4">
+                        Controle de horários, comissões e desempenho dos barbeiros em tempo real.
+                    </p>
+                    <a href="#" class="text-purple-600 font-medium flex items-center">
+                        Saiba mais
+                        <i class="fas fa-arrow-right ml-2 text-sm"></i>
+                    </a>
+                </div>
+                
+                <!-- Feature 5 -->
+                <div class="feature-card bg-white rounded-2xl p-6 shadow-lg transition-all duration-300">
+                    <div class="w-12 h-12 rounded-full bg-purple-100 flex items-center justify-center mb-4">
+                        <i class="fas fa-bell text-purple-600 text-xl"></i>
+                    </div>
+                    <h3 class="text-xl font-bold mb-2">Notificações Automáticas</h3>
+                    <p class="text-gray-600 mb-4">
+                        Lembretes por e-mail, SMS e app para reduzir cancelamentos e atrasos.
+                    </p>
+                    <a href="#" class="text-purple-600 font-medium flex items-center">
+                        Saiba mais
+                        <i class="fas fa-arrow-right ml-2 text-sm"></i>
+                    </a>
+                </div>
+                
+                <!-- Feature 6 -->
+                <div class="feature-card bg-white rounded-2xl p-6 shadow-lg transition-all duration-300">
+                    <div class="w-12 h-12 rounded-full bg-purple-100 flex items-center justify-center mb-4">
+                        <i class="fas fa-credit-card text-purple-600 text-xl"></i>
+                    </div>
+                    <h3 class="text-xl font-bold mb-2">Pagamentos Online</h3>
+                    <p class="text-gray-600 mb-4">
+                        Integração com cartão de crédito, PIX e outros meios de pagamento.
+                    </p>
+                    <a href="#" class="text-purple-600 font-medium flex items-center">
+                        Saiba mais
+                        <i class="fas fa-arrow-right ml-2 text-sm"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Testimonials Section -->
+    <section id="testimonials" class="py-20 px-4">
+        <div class="container mx-auto max-w-6xl">
+            <div class="text-center mb-16">
+                <h2 class="text-3xl md:text-4xl font-bold mb-4">O que nossos clientes dizem</h2>
+                <p class="text-xl text-gray-600 max-w-2xl mx-auto">
+                    Veja como o BarberBook transformou os negócios de barbearias
+                </p>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <!-- Testimonial 1 -->
+                <div class="testimonial-card bg-white rounded-2xl p-6 shadow-lg">
+                    <div class="flex items-center mb-4">
+                        <div class="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center">
+                            <i class="fas fa-user text-gray-500"></i>
+                        </div>
+                        <div class="ml-4">
+                            <div class="font-bold">Maria Santos</div>
+                            <div class="text-sm text-gray-500">Barbearia Estilo</div>
+                        </div>
+                    </div>
+                    <p class="text-gray-600 mb-4">
+                        "Com o BarberBook, conseguimos reduzir 40% de cancelamentos e aumentar nossa produtividade em 30%. O sistema é intuitivo e muito eficiente."
+                    </p>
+                    <div class="flex text-yellow-400">
+                        <i class="fas fa-star"></i>
+                        <i class="fas fa-star"></i>
+                        <i class="fas fa-star"></i>
+                        <i class="fas fa-star"></i>
+                        <i class="fas fa-star"></i>
+                    </div>
+                </div>
+                
+                <!-- Testimonial 2 -->
+                <div class="testimonial-card bg-white rounded-2xl p-6 shadow-lg">
+                    <div class="flex items-center mb-4">
+                        <div class="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center">
+                            <i class="fas fa-user text-gray-500"></i>
+                        </div>
+                        <div class="ml-4">
+                            <div class="font-bold">Carlos Oliveira</div>
+                            <div class="text-sm text-gray-500">Corte & Barba</div>
+                        </div>
+                    </div>
+                    <p class="text-gray-600 mb-4">
+                        "A plataforma é incrível! Facilitou muito a gestão da minha barbearia. Agora posso focar mais em servir os clientes e menos em gerenciar horários."
+                    </p>
+                    <div class="flex text-yellow-400">
+                        <i class="fas fa-star"></i>
+                        <i class="fas fa-star"></i>
+                        <i class="fas fa-star"></i>
+                        <i class="fas fa-star"></i>
+                        <i class="fas fa-star"></i>
+                    </div>
+                </div>
+                
+                <!-- Testimonial 3 -->
+                <div class="testimonial-card bg-white rounded-2xl p-6 shadow-lg">
+                    <div class="flex items-center mb-4">
+                        <div class="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center">
+                            <i class="fas fa-user text-gray-500"></i>
+                        </div>
+                        <div class="ml-4">
+                            <div class="font-bold">Roberta Silva</div>
+                            <div class="text-sm text-gray-500">Barbearia Premium</div>
+                        </div>
+                    </div>
+                    <p class="text-gray-600 mb-4">
+                        "A integração com o app mobile foi o que faltava para nossa barbearia. Os clientes adoram poder marcar horários com facilidade."
+                    </p>
+                    <div class="flex text-yellow-400">
+                        <i class="fas fa-star"></i>
+                        <i class="fas fa-star"></i>
+                        <i class="fas fa-star"></i>
+                        <i class="fas fa-star"></i>
+                        <i class="fas fa-star-half-alt"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Pricing Section -->
+    <section id="pricing" class="py-20 bg-gray-100 px-4">
+        <div class="container mx-auto max-w-6xl">
+            <div class="text-center mb-16">
+                <h2 class="text-3xl md:text-4xl font-bold mb-4">Planos que se adaptam ao seu negócio</h2>
+                <p class="text-xl text-gray-600 max-w-2xl mx-auto">
+                    Escolha o plano ideal para o tamanho e necessidades da sua barbearia
+                </p>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <!-- Basic Plan -->
+                <div class="bg-white rounded-2xl p-8 shadow-lg border border-gray-200">
+                    <h3 class="text-2xl font-bold mb-2">Básico</h3>
+                    <div class="mb-6">
+                        <span class="text-3xl font-bold">R$ 49</span>
+                        <span class="text-gray-600">/mês</span>
+                    </div>
+                    <ul class="mb-8 space-y-3">
+                        <li class="flex items-center">
+                            <i class="fas fa-check-circle text-green-500 mr-2"></i>
+                            <span>Agendamento online</span>
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check-circle text-green-500 mr-2"></i>
+                            <span>Gerenciamento de horários</span>
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check-circle text-green-500 mr-2"></i>
+                            <span>Notificações automáticas</span>
+                        </li>
+                        <li class="flex items-center text-gray-400">
+                            <i class="fas fa-times-circle mr-2"></i>
+                            <span>Relatórios analíticos</span>
+                        </li>
+                        <li class="flex items-center text-gray-400">
+                            <i class="fas fa-times-circle mr-2"></i>
+                            <span>App mobile</span>
+                        </li>
+                    </ul>
+                    <button class="w-full bg-gray-100 text-gray-800 py-3 rounded-full font-medium hover:bg-gray-200 transition-colors">
+                        Começar Grátis
+                    </button>
+                </div>
+                
+                <!-- Pro Plan -->
+                <div class="bg-gradient-to-br from-purple-600 to-indigo-600 rounded-2xl p-8 shadow-xl text-white transform scale-105">
+                    <div class="flex justify-between items-start mb-4">
+                        <h3 class="text-2xl font-bold">Profissional</h3>
+                        <span class="bg-white text-purple-600 text-xs font-bold px-3 py-1 rounded-full">MAIS POPULAR</span>
+                    </div>
+                    <div class="mb-6">
+                        <span class="text-3xl font-bold">R$ 99</span>
+                        <span class="text-purple-200">/mês</span>
+                    </div>
+                    <ul class="mb-8 space-y-3">
+                        <li class="flex items-center">
+                            <i class="fas fa-check-circle text-white mr-2"></i>
+                            <span>Agendamento online</span>
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check-circle text-white mr-2"></i>
+                            <span>Gerenciamento de horários</span>
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check-circle text-white mr-2"></i>
+                            <span>Notificações automáticas</span>
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check-circle text-white mr-2"></i>
+                            <span>Relatórios analíticos</span>
+                        </li>
+                        <li class="flex items-center text-purple-200">
+                            <i class="fas fa-times-circle mr-2"></i>
+                            <span>App mobile</span>
+                        </li>
+                    </ul>
+                    <button class="w-full bg-white text-purple-600 py-3 rounded-full font-medium hover:bg-gray-100 transition-colors">
+                        Começar Grátis
+                    </button>
+                </div>
+                
+                <!-- Enterprise Plan -->
+                <div class="bg-white rounded-2xl p-8 shadow-lg border border-gray-200">
+                    <h3 class="text-2xl font-bold mb-2">Empresarial</h3>
+                    <div class="mb-6">
+                        <span class="text-3xl font-bold">R$ 199</span>
+                        <span class="text-gray-600">/mês</span>
+                    </div>
+                    <ul class="mb-8 space-y-3">
+                        <li class="flex items-center">
+                            <i class="fas fa-check-circle text-green-500 mr-2"></i>
+                            <span>Agendamento online</span>
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check-circle text-green-500 mr-2"></i>
+                            <span>Gerenciamento de horários</span>
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check-circle text-green-500 mr-2"></i>
+                            <span>Notificações automáticas</span>
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check-circle text-green-500 mr-2"></i>
+                            <span>Relatórios analíticos</span>
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-check-circle text-green-500 mr-2"></i>
+                            <span>App mobile</span>
+                        </li>
+                    </ul>
+                    <button class="w-full bg-gray-100 text-gray-800 py-3 rounded-full font-medium hover:bg-gray-200 transition-colors">
+                        Começar Grátis
+                    </button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="py-20 px-4">
+        <div class="container mx-auto max-w-4xl text-center">
+            <h2 class="text-3xl md:text-4xl font-bold mb-6">Pronto para transformar sua barbearia?</h2>
+            <p class="text-xl text-gray-600 mb-10 max-w-2xl mx-auto">
+                Junte-se a centenas de barbearias que já usam o BarberBook para otimizar seus processos e aumentar sua produtividade.
+            </p>
+            <div class="flex flex-col sm:flex-row justify-center space-y-4 sm:space-y-0 sm:space-x-4">
+                <button class="bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-8 py-4 rounded-full font-medium hover:opacity-90 transition-opacity shadow-lg text-lg">
+                    Começar Grátis
+                </button>
+                <button class="border-2 border-gray-300 px-8 py-4 rounded-full font-medium hover:border-purple-600 transition-colors text-lg">
+                    Agendar Demonstração
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="bg-gray-900 text-white py-12 px-4">
+        <div class="container mx-auto max-w-6xl">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-8">
+                <div>
+                    <div class="flex items-center mb-4">
+                        <div class="w-10 h-10 rounded-full bg-gradient-to-r from-purple-600 to-indigo-600 flex items-center justify-center">
+                            <i class="fas fa-scissors text-white text-xl"></i>
+                        </div>
+                        <span class="ml-3 text-xl font-bold">BarberBook</span>
+                    </div>
+                    <p class="text-gray-400 mb-4">
+                        Solução completa para gerenciamento de barbearias. Simplifique sua vida e maximize sua produtividade.
+                    </p>
+                    <div class="flex space-x-4">
+                        <a href="#" class="text-gray-400 hover:text-white"><i class="fab fa-facebook-f"></i></a>
+                        <a href="#" class="text-gray-400 hover:text-white"><i class="fab fa-twitter"></i></a>
+                        <a href="#" class="text-gray-400 hover:text-white"><i class="fab fa-instagram"></i></a>
+                        <a href="#" class="text-gray-400 hover:text-white"><i class="fab fa-linkedin-in"></i></a>
+                    </div>
+                </div>
+                
+                <div>
+                    <h3 class="text-lg font-bold mb-4">Produto</h3>
+                    <ul class="space-y-2">
+                        <li><a href="#" class="text-gray-400 hover:text-white">Recursos</a></li>
+                        <li><a href="#" class="text-gray-400 hover:text-white">Preços</a></li>
+                        <li><a href="#" class="text-gray-400 hover:text-white">Integrações</a></li>
+                        <li><a href="#" class="text-gray-400 hover:text-white">Atualizações</a></li>
+                    </ul>
+                </div>
+                
+                <div>
+                    <h3 class="text-lg font-bold mb-4">Empresa</h3>
+                    <ul class="space-y-2">
+                        <li><a href="#" class="text-gray-400 hover:text-white">Sobre</a></li>
+                        <li><a href="#" class="text-gray-400 hover:text-white">Blog</a></li>
+                        <li><a href="#" class="text-gray-400 hover:text-white">Carreiras</a></li>
+                        <li><a href="#" class="text-gray-400 hover:text-white">Contato</a></li>
+                    </ul>
+                </div>
+                
+                <div>
+                    <h3 class="text-lg font-bold mb-4">Contato</h3>
+                    <ul class="space-y-2 text-gray-400">
+                        <li class="flex items-start">
+                            <i class="fas fa-map-marker-alt mt-1 mr-2"></i>
+                            <span>São Paulo, Brasil</span>
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-envelope mr-2"></i>
+                            <span>contato@barberbook.com</span>
+                        </li>
+                        <li class="flex items-center">
+                            <i class="fas fa-phone mr-2"></i>
+                            <span>+55 (11) 99999-9999</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="border-t border-gray-800 mt-12 pt-8 text-center text-gray-500">
+                <p>&copy; 2023 BarberBook. Todos os direitos reservados.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // Simple animation for elements when they come into view
+        document.addEventListener('DOMContentLoaded', function() {
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        entry.target.classList.add('animate-fade-in');
+                    }
+                });
+            }, {
+                threshold: 0.1
+            });
+            
+            document.querySelectorAll('.feature-card, .testimonial-card').forEach(el => {
+                observer.observe(el);
+            });
+            
+            // Smooth scrolling for anchor links
+            document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+                anchor.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    document.querySelector(this.getAttribute('href')).scrollIntoView({
+                        behavior: 'smooth'
+                    });
+                });
+            });
+        });
+    </script>
+</body>
+</html>

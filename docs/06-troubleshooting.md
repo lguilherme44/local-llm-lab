@@ -195,6 +195,59 @@ Uma versão anterior do `clean.sh` relatava quase nada por isso. Havia 13 GB.
 
 ---
 
+## O servidor morre sozinho depois que fecho o terminal
+
+Se você subiu por SSH, ele não morreu depois — morreu **junto**. O Windows põe cada sessão num job object e derruba o job no logout, levando os filhos. E o `start` reporta sucesso porque o health check passa antes de a sessão terminar, então o sintoma aparece só quando você volta.
+
+O `-Detached` resolve, subindo pelo Agendador de Tarefas — o serviço dele cria o processo, que nasce fora do nosso job object:
+
+```powershell
+.\llm-server.ps1 start moe -Lan -Detached
+```
+
+Sob SSH isso liga sozinho (o script checa `$env:SSH_CONNECTION`), porque ali não é preferência.
+
+**A tarefa exige alguém logado na máquina.** Ela roda com `LogonType Interactive`, na sessão do usuário, e é isso que dá acesso normal à GPU — `SYSTEM` ou `S4U` cairiam na sessão 0. Sem sessão aberta, a tarefa é criada mas não inicia.
+
+Para inspecionar ou limpar à mão:
+
+```powershell
+Get-ScheduledTask -TaskName llm-server | Select-Object State
+.\llm-server.ps1 stop      # derruba o processo E desregistra a tarefa
+```
+
+### Erros de conta ao registrar a tarefa
+
+> Não foi feito mapeamento entre os nomes de conta e as identificações de segurança
+
+Nome de conta que o sistema não resolve. Duas causas comuns, e **a solução das duas é usar SID**:
+
+- Sob SSH, `$env:USERDOMAIN` pode vir `WORKGROUP` enquanto a conta real é `DESKTOP-XXXX\Admin`.
+- Em Windows **pt-BR**, grupos internos são traduzidos: `Administrators` não existe, é `Administradores`.
+
+SID não tem tradução nem depende de como a sessão foi aberta:
+
+```powershell
+[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value   # o seu
+icacls $arquivo /inheritance:r /grant '*S-1-5-32-544:F' /grant '*S-1-5-18:F'
+```
+
+`*S-1-5-32-544` é Administrators e `*S-1-5-18` é SYSTEM, em qualquer idioma. Pela mesma razão, `Get-Counter '\Memory\Available MBytes'` falha em pt-BR — nomes de contador também são traduzidos. Use `Get-CimInstance Win32_PerfRawData_PerfOS_Memory`.
+
+---
+
+## O modelo não carrega e a mensagem sugere corrupção
+
+> error loading model: tensor '...' data is not within the file bounds, model is corrupted or incomplete
+
+Duas causas distintas, e a mensagem é a mesma:
+
+**Download truncado.** Compare o tamanho em bytes com o `content-length` do Hugging Face — não confie no "parece que baixou tudo". Faltando 18,5 MB de 12,9 GB, o modelo carrega até a última camada antes de falhar. `curl -C -` retoma de onde parou.
+
+**Caminho de symlink.** O cache do Hugging Face guarda o arquivo em `blobs\<sha>` e cria um link em `snapshots\<rev>\nome.gguf`. No Windows o `llama.cpp` não segue esse link: falha em ~0,25 s, o que já é uma pista — corrupção real falha depois de ler bastante coisa. Aponte para o `blobs\<sha>`.
+
+---
+
 ## Armadilhas de shell (se você for editar os scripts)
 
 Duas que morderam mais de uma vez:
@@ -223,6 +276,48 @@ Este bug esteve no `llm-server.command`: os perfis com flags extras (`agent`, `q
 **A lição maior:** ao adicionar um campo opcional, teste o caso vazio. Ele é o padrão para a maioria das entradas.
 
 **`read` sem TTY recebe EOF na hora.** Um script com confirmação interativa cancela sozinho quando rodado por pipe ou por um agente. Detecte com `[[ ! -t 0 ]]` e ofereça uma flag `--yes`.
+
+**Resposta vazia sem erro nenhum? O raciocínio comeu o `max_tokens`.** O Qwen3 pensa por padrão, e o bloco de raciocínio é gerado **antes** da resposta. Se `max_tokens` acaba durante o raciocínio, o servidor devolve `content: ""` com `finish_reason: "stop"` — sucesso aparente, resposta nenhuma.
+
+Medido no `llama-server` do Windows, perfil `agent`, antes da correção:
+
+```
+max_tokens: 30   → content: ''            (30 tokens, todos em raciocínio)
+max_tokens: 400  → content: 'OK.'         (112 tokens, ~98 em reasoning_content)
+```
+
+Cento e doze tokens para dizer "OK". Com `--jinja`, o `llama-server` separa isso em `message.reasoning_content` em vez de vazar `<think>` no conteúdo — mais limpo de ler, e mais fácil de não perceber que está acontecendo.
+
+Por isso os perfis Qwen3 sobem com `--reasoning off` (o binário também aceita `--reasoning-budget 0`, que atinge o fim do raciocínio imediatamente mas ainda gasta os tokens de abre-e-fecha do template). No macOS o equivalente é `--chat-template-args {"enable_thinking":false}`.
+
+**A lição maior:** ao comparar duas plataformas servindo o "mesmo" modelo, compare as flags, não só o nome do modelo. Essa divergência existiu entre `llm-server.command` e `llm-server.ps1` sem que nenhum teste falhasse — os dois respondiam, só que um pensava e o outro não.
+
+**`.ps1` precisa de BOM; `.yaml` e `.json` não podem ter.** A regra é oposta para cada um, e trocá-las quebra os dois.
+
+O Windows PowerShell 5.1 — o `powershell.exe` que já vem no Windows — lê arquivo `.ps1` **sem** BOM como ANSI (Windows-1252). Todo caractere UTF-8 multibyte do script (`á`, `é`, `—`, `─`) chega ao parser como dois caracteres de lixo. Em comentário, o resultado é feio; dentro de uma string exibida, a saída fica ilegível. O PowerShell 7+ (`pwsh.exe`) assume UTF-8 sem BOM e não sofre disso — o que torna o bug invisível para quem só testa no 7.
+
+Por isso os `.ps1` deste repositório são gravados **com** BOM, e o `llm-server.ps1` fixa o encoding de saída no topo:
+
+```powershell
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+$OutputEncoding = [Console]::OutputEncoding
+```
+
+São dois problemas distintos, e resolver um não resolve o outro: o BOM conserta a **leitura** do arquivo; o `OutputEncoding` conserta a **escrita** no console. Um console em cp850 imprime lixo mesmo lendo o script perfeitamente.
+
+Já os arquivos de configuração que o `llm-clients-setup.ps1` gera (`config.yaml` do Continue, `models.json` do `pi`) precisam do contrário — o parser YAML engasga com BOM. O script escreve assim, de propósito:
+
+```powershell
+[IO.File]::WriteAllText($path, $content, (New-Object Text.UTF8Encoding $false))
+```
+
+Evite `Set-Content -Encoding UTF8` para esses: no PowerShell 5.1 esse comando **adiciona** BOM. No 7+ não. Mesmo comando, resultado diferente por versão — é a razão de o script usar `WriteAllText` diretamente.
+
+Se você editar um `.ps1` e os acentos começarem a sair errados, o primeiro suspeito é o editor ter salvado sem BOM. Confirme com:
+
+```powershell
+Format-Hex .\windows\llm-server.ps1 -Count 3   # deve começar com EF BB BF
+```
 
 ---
 

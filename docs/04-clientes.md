@@ -70,6 +70,33 @@ Não confunda isso com travamento. Nós confundimos: interrompemos a execução 
 
 O prompt cache é o que torna isso viável do segundo turno em diante — prefixo repetido cai de 20 s para 0,78 s.
 
+### `pi -p` responde e não encerra: é extensão, não o modelo
+
+Em modo não-interativo (`-p` / `--print`) o `pi` pode imprimir a resposta correta e **nunca sair** — processo vivo, 0% de CPU, indefinidamente. É fácil ler isso como servidor lento e ir mexer no lugar errado.
+
+Não é o modelo. Medido contra um servidor a 110 tok/s:
+
+| invocação | resultado |
+|---|---|
+| `pi -p "..."` | responde e pendura (>10 min, nunca saiu) |
+| `pi -ne -p "..."` | responde e **sai em 2 s, exit 0** |
+| `pi -ns -p "..."` (sem skills) | pendura |
+| `pi -np -p "..."` (sem prompt templates) | pendura |
+
+Só `--no-extensions` resolve, o que isola a causa em **extensão** — não em skill nem em template. Neste caso o culpado apareceu na árvore de processos: o único filho direto do `pi` era o broker da extensão `pi-intercom`.
+
+```bash
+pgrep -P <pid-do-pi> | xargs ps -o pid,command -p
+```
+
+Em Node, um processo filho vivo mantém o event loop do pai aberto. O broker não é encerrado ao fim do turno, então o `pi` fica preso mesmo tendo terminado o trabalho.
+
+**Para uso não-interativo — scripts, CI, um agente chamando o `pi` — passe `-ne`.** No modo interativo o problema não aparece: você fecha a sessão e o processo vai junto.
+
+Vale a ressalva de escopo: a lista de extensões instaladas é de cada máquina. Se `pi -p` pendurar na sua, rode o `pgrep` acima antes de culpar o `pi-intercom` — o método é o que se aproveita, não o nome do culpado.
+
+Não confunda com o parágrafo anterior: ali o turno era lento e **terminava**; aqui ele termina e o processo não morre. Sintoma parecido, causas diferentes.
+
 ---
 
 ## Continue (VSCode)
@@ -141,31 +168,115 @@ Mas confirme que a soma dos dois modelos cabe na sua memória antes.
 
 ## Omnigent (Meta-harness)
 
-O [Omnigent](https://github.com/omnigent-ai/omnigent) é um orquestrador de agentes. Ele não é uma engine de inferência (como o llama.cpp), mas um cliente avançado que permite rodar múltiplos agentes colaborando na mesma sessão.
+O [Omnigent](https://github.com/omnigent-ai/omnigent) é um orquestrador de agentes. Ele não é uma engine de inferência (como o llama.cpp), mas um meta-harness: uma camada única sobre Claude Code, Codex, Cursor, `pi` e agentes próprios, com vários agentes colaborando na mesma sessão.
 
-### Como configurar
+### Instalação
 
-Crie um arquivo `agent.yaml` para definir o seu agente apontando para o servidor local:
+Precisa de **Python 3.12+**. O pacote no PyPI é `omnigent` — o pacote homônimo no **npm é outro projeto**, não instale por lá.
+
+```bash
+uv tool install --python 3.12 omnigent
+```
+
+### Onde vai a configuração
+
+Num `agent.yaml`. Os dois arquivos deste repositório vivem em [`omnigent/`](../omnigent/).
+
+**Caminho 1 — Omnigent falando direto com o servidor MLX** ([`omnigent/qwen-local.yaml`](../omnigent/qwen-local.yaml)):
 
 ```yaml
-name: meu-agente-local
+name: qwen_local
 prompt: |
-  Você é um assistente focado e direto, usando o LLM local.
+  Você é um assistente de engenharia direto e conciso.
 
 executor:
   harness: openai-agents
-  model: mlx-community/Qwen3-8B-4bit  # substitua pelo alias do seu modelo
+  model: mlx-community/Qwen3-8B-4bit
+  use_responses: false
+  auth:
+    type: api_key
+    api_key: local
+    base_url: http://127.0.0.1:8080/v1
+
+os_env:
+  type: caller_process
+  cwd: .
 ```
 
-Rode o Omnigent apontando para a nossa API:
+**Caminho 2 — Omnigent pilotando o `pi`** ([`omnigent/qwen-local-pi.yaml`](../omnigent/qwen-local-pi.yaml)): aqui quem resolve provider e credencial é o `~/.pi/agent/models.json` já configurado acima, e o Omnigent só orquestra o CLI em modo RPC.
+
+```yaml
+executor:
+  harness: pi
+  model: mlx-community/Qwen3-8B-4bit
+```
 
 ```bash
-export OPENAI_BASE_URL=http://127.0.0.1:8080/v1
-export OPENAI_API_KEY=local
-omnigent run agent.yaml
+./macos/llm-server.command start agent        # o servidor precisa estar no ar
+omnigent run omnigent/qwen-local.yaml
+omnigent run omnigent/qwen-local.yaml -p "resuma o README" # um turno, sem REPL
 ```
 
-**A grande sacada:** Com o Omnigent, você pode ter o `Qwen3` local editando arquivos usando as ferramentas dele e, no mesmo `agent.yaml`, declarar um sub-agente `revisor` usando uma API externa (ex: Claude 3.5) para validar o código gerado pelo modelo local.
+### Três detalhes que quebram
+
+**`use_responses: false` não é opcional.** O harness `openai-agents` usa o Agents SDK, que por padrão fala a **Responses API** (`/v1/responses`). O `mlx_lm.server` só implementa `/v1/chat/completions` — sem essa flag, todo turno morre em 404. O default só é `false` automaticamente para modelos `databricks-*` não-GPT; qualquer outro id, incluindo o nosso, cai no caminho Responses.
+
+**Prefira `executor.auth` a `export OPENAI_BASE_URL`.** As duas rotas funcionam — o executor cai para as variáveis de ambiente quando o spec não declara `auth` —, mas o `auth` deixa o agente autocontido: quem clonar o repositório roda sem preparar o shell.
+
+**A telemetria de produto vem ligada.** O Omnigent envia dados de uso anonimizados por padrão. Num lab local-first isso costuma ser o oposto do que se quer — desligue de forma persistente em `~/.omnigent/config.yaml`:
+
+```yaml
+telemetry: false
+```
+
+Também vale `OMNIGENT_DISABLE_TELEMETRY=true` ou `DO_NOT_TRACK=1` no ambiente. Não confunda com `OMNIGENT_TELEMETRY_ENABLED`, que é o tracing OpenTelemetry — esse já vem **desligado** e é opt-in.
+
+### Expectativa de desempenho
+
+Vale o mesmo aviso do `pi`, agravado: o Omnigent sobe um servidor local em Python e um runner, então o consumo de RAM some com a folga que o modelo de 8B já deixava apertada. Num Air de 16 GB, com editor e navegador abertos, o sistema vai para swap e o turno passa de minutos. Feche o que puder, ou use o perfil `tiny`.
+
+Medido nesta máquina: com o `mlx_lm.server` residente no perfil `agent` mais o Omnigent, sobraram **0,3 GB de RAM livre e 16,8 GB em swap**. O gargalo é memória, não CPU — e é o motivo pelo qual servir o modelo de outra máquina deixa de ser luxo.
+
+---
+
+## Servindo de outra máquina da rede
+
+Se você tem uma segunda máquina com o modelo carregado, o cliente só precisa trocar o endereço. O ganho é direto: a máquina que edita código para de disputar RAM com a inferência.
+
+Do lado que **serve** (Windows, `llama-server`):
+
+```powershell
+.\windows\llm-server.ps1 start agent -Lan
+```
+
+O `-Lan` faz bind **no IP da interface física ativa, e só nele**. O padrão sem a flag é `127.0.0.1`, que não sai da máquina.
+
+**Não use `0.0.0.0`**, mesmo que o `$env:LLM_HOST` aceite. Aquilo escuta em *toda* interface: VPN corporativa conectada, Hyper-V, WSL, Tailscale. Um bind num IP específico limita a exposição à rede que você realmente quis atender. Se o `-Lan` não conseguir resolver a interface, ele **falha** em vez de abrir tudo — passe o endereço à mão com `$env:LLM_HOST = '192.168.3.51'`.
+
+E libere a porta apenas para a sua faixa de IP — PowerShell como administrador:
+
+```powershell
+New-NetFirewallRule -DisplayName 'llama-server LAN' -Direction Inbound `
+  -Protocol TCP -LocalPort 8080 -Action Allow -Profile Private `
+  -RemoteAddress 192.168.3.0/24
+```
+
+Do lado que **consome** (macOS), veja [`omnigent/qwen-remote.yaml`](../omnigent/qwen-remote.yaml) e o provider `llama-remote` em `~/.pi/agent/models.json`:
+
+```bash
+pi --provider llama-remote --model agent --api-key local
+omnigent run omnigent/qwen-remote.yaml
+```
+
+### O que muda em relação ao local
+
+**O `model` deixa de ser o repo do Hugging Face e passa a ser o ALIAS.** Em single-model mode o `llama-server` responde ao que veio em `-a` — `agent`, `moe`, `fast`, `tiny`. Mandar `mlx-community/Qwen3-8B-4bit` para ele dá erro de modelo inexistente.
+
+**O contexto é menor.** Os perfis do Windows usam `Ctx = 16384` para `agent` e `fast` (contra 32768 no macOS). Declarar 32768 no cliente faz o servidor truncar sem avisar.
+
+**`--api-key local` sobre HTTP puro não protege nada.** Qualquer um na mesma rede lê os prompts e as respostas em texto claro. Em rede doméstica é um risco que se aceita de olhos abertos; em rede de escritório ou compartilhada, não use — exponha por um túnel (SSH, WireGuard) em vez de abrir a porta.
+
+**A grande sacada:** o `Qwen3` local edita arquivos com as ferramentas dele e, no mesmo `agent.yaml`, um sub-agente `revisor` usa uma API externa (ex: Claude) para validar o código gerado localmente. O trabalho barato fica em casa; a revisão caríssima só vê o diff.
 
 ---
 
@@ -184,9 +295,12 @@ A configuração mais produtiva não é escolher um modelo — é ter dois e tro
 
 | tarefa | perfil | por quê |
 |---|---|---|
-| `pi`, Cline, modo agente | `agent` (Qwen3-8B) | único com tool calling comprovado |
+| `pi`, Cline, modo agente | `agent` (Qwen3-8B) | tool calling comprovado, 72,5 tok/s |
+| agente em código difícil | `moe` (Qwen3-Coder-30B-A3B) | só Windows; gera 3× mais devagar, faz prefill 1,5× mais rápido |
 | chat e edit no VSCode | `fast` (Qwen2.5-Coder-7B) | escreve código melhor |
 | autocomplete | `tiny`, outra porta | precisa ser leve e não competir |
+
+O `moe` só existe no lado Windows: ele depende de `--n-cpu-moe`, que separa experts de atenção entre RAM e VRAM. Num Mac a memória é unificada e não há essa fronteira para explorar — lá o modelo simplesmente cabe ou não cabe.
 
 ```bash
 ./macos/llm-server.command restart agent    # ~5 segundos

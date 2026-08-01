@@ -140,9 +140,24 @@ Ele consulta a API do Hugging Face primeiro e mostra tamanho, `model_type` e for
 |---|---|---|
 | 8–16 GB, quer agente | `agent` (Qwen3-8B) | tool calling comprovado, cabe |
 | 8–16 GB, chat/edit no editor | `fast` (Qwen2.5-Coder-7B) | código melhor, tools não importam |
-| memória muito apertada | `tiny` (Qwen3-4B) | 2× mais rápido, tools funcionam |
+| memória muito apertada | `tiny` (Qwen3-4B) | 1,5× mais rápido, tools funcionam |
+| GPU de 8 GB **e** 16 GB de RAM livre | `moe` (Qwen3-Coder-30B-A3B) | só no Windows; ver a ressalva abaixo |
 | 32 GB+ | teste `balanced`/`quality` | aí o teto é outro — meça |
 | precisa de imagem/áudio | modelo multimodal + `mlx_vlm` | `mlx_lm` não carrega |
+
+---
+
+## A exceção MoE
+
+Tudo acima assume modelo **denso**, onde a regra é dura: o que não cabe na memória rápida é inutilizável, e a queda é de 28×, não de 30%.
+
+Modelos **MoE** quebram essa regra por construção. O `moe` do Windows serve um Qwen3-Coder de 30 B numa 3060 Ti de 8 GB porque só 8 dos seus 128 experts são lidos por token — então manter experts na RAM do sistema custa pouco, enquanto a atenção, lida sempre, fica na GPU.
+
+Medido: **24,4 tok/s de geração e 595 de prefill**, contra 72,5 e 393 do `agent`. Gera 3× mais devagar e faz prefill 1,5× *mais rápido* — e prefill é o que domina em uso agêntico.
+
+**A ressalva, e ela é séria:** com 16 GB de RAM ele sobe com ~0,2 GB livres. Não é "apertado", é sem margem. Abrir o navegador empurra experts para o pagefile, e aí a geração vai a 1–2 tok/s. Se a sua máquina tem 16 GB e você usa ela para outra coisa ao mesmo tempo, fique no `agent`. Com 32 GB, o `moe` deixa de ter ressalva.
+
+Números e método completos em [benchmarks](benchmarks.md#um-moe-de-30b-numa-gpu-de-8-gb).
 
 ---
 

@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Configura o pi e o Continue (VSCode) para usar o LLM local do llm-server.ps1.
 

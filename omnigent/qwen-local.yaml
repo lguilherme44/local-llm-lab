@@ -1,0 +1,28 @@
+name: qwen_local
+prompt: |
+  Você é um assistente de engenharia direto e conciso, rodando 100% local
+  no Qwen3 8B (MLX, 4-bit). Responda em português.
+
+  Regras:
+  - Vá direto ao ponto. Sem preâmbulos.
+  - Use as ferramentas de arquivo e shell para ler o código antes de opinar.
+  - Se não souber, diga que não sabe.
+
+executor:
+  harness: openai-agents
+  model: mlx-community/Qwen3-8B-4bit
+
+  # O mlx_lm.server implementa /v1/chat/completions e NÃO /v1/responses.
+  # Sem esta flag o Agents SDK usa a Responses API e todo turno vira 404.
+  use_responses: false
+
+  auth:
+    type: api_key
+    api_key: local # o servidor ignora, mas o cliente exige um valor
+    base_url: http://127.0.0.1:8080/v1
+
+# Ferramentas de sistema (ler/escrever arquivos, shell) no diretório atual.
+# Sem 'sandbox', o Omnigent aplica o padrão da plataforma (darwin_seatbelt no macOS).
+os_env:
+  type: caller_process
+  cwd: .

@@ -310,7 +310,7 @@ $Profiles = @(
         FileGB = 12.9; Ctx = 16384; VramGB = 6.2; RamGB = 6.9; CpuMoe = 36; Tools = $true
         File = 'Qwen3-Coder-30B-A3B-Instruct-UD-Q3_K_XL.gguf'
         ExtraArgs = @()
-        Desc = 'Qwen3-Coder 30B-A3B (MoE, 3B ativos). Tool calling validado e entrega feature (test-feature.py) onde o 8B falha. 26,6 tok/s de geracao, 424 de prefill. Janela maior: \$env:LLM_CTX=32768, mas custa 5x no prefill.'
+        Desc = 'Qwen3-Coder 30B-A3B (MoE, 3B ativos). Tool calling validado e entrega feature (test-feature.py) onde o 8B falha. 26,6 tok/s de geracao, 424 de prefill. Janela maior: $env:LLM_CTX=32768, mas custa 5x no prefill.'
     },
     [pscustomobject]@{
         Name = 'fast'; Repo = 'bartowski/Qwen2.5-Coder-7B-Instruct-GGUF'; Quant = 'Q4_K_M'
@@ -810,6 +810,12 @@ function Invoke-Start($name) {
     #           (ja e o padrao nas versoes atuais, explicito aqui de proposito)
     # NAO chamar esta variavel de $args: no PowerShell $args e automatica e
     # reservada; atribuir a ela dentro de funcao gera comportamento estranho.
+    # Contexto sobrescritível: a janela é a troca mais frequente que se quer
+    # fazer sem editar o arquivo, e o custo dela em throughput é grande o
+    # bastante para não virar padrão. Ver o comentário do perfil `moe`.
+    $ctx = if ($env:LLM_CTX) { [int]$env:LLM_CTX } else { $p.Ctx }
+    if ($ctx -ne $p.Ctx) { Write-Dim "contexto sobrescrito: $ctx (perfil pede $($p.Ctx))" }
+
     # -m com caminho local, ou -hf para os perfis que o -hf resolve. Ver o
     # comentario do campo File nos perfis.
     $fonte = if ($p.File) {
@@ -831,12 +837,6 @@ function Invoke-Start($name) {
         # so escutamos em 127.0.0.1, o risco e baixo, mas fechamos de todo jeito.
         '--api-key', 'local'
     )
-
-    # Contexto sobrescritível: a janela é a troca mais frequente que se quer
-    # fazer sem editar o arquivo, e o custo dela em throughput é grande o
-    # bastante para não virar padrão. Ver o comentário do perfil `moe`.
-    $ctx = if ($env:LLM_CTX) { [int]$env:LLM_CTX } else { $p.Ctx }
-    if ($ctx -ne $p.Ctx) { Write-Dim "contexto sobrescrito: $ctx (perfil pede $($p.Ctx))" }
 
     # --n-cpu-moe: só em perfil MoE. Ajustável sem editar o script, porque este é
     # o botão que se gira para trocar VRAM por RAM na sua máquina concreta —

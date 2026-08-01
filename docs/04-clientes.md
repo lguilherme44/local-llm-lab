@@ -270,7 +270,7 @@ omnigent run omnigent/qwen-remote.yaml
 
 ### O que muda em relação ao local
 
-**O `model` deixa de ser o repo do Hugging Face e passa a ser o ALIAS.** Em single-model mode o `llama-server` responde ao que veio em `-a` — `agent`, `fast`, `tiny`. Mandar `mlx-community/Qwen3-8B-4bit` para ele dá erro de modelo inexistente.
+**O `model` deixa de ser o repo do Hugging Face e passa a ser o ALIAS.** Em single-model mode o `llama-server` responde ao que veio em `-a` — `agent`, `moe`, `fast`, `tiny`. Mandar `mlx-community/Qwen3-8B-4bit` para ele dá erro de modelo inexistente.
 
 **O contexto é menor.** Os perfis do Windows usam `Ctx = 16384` para `agent` e `fast` (contra 32768 no macOS). Declarar 32768 no cliente faz o servidor truncar sem avisar.
 
@@ -295,9 +295,12 @@ A configuração mais produtiva não é escolher um modelo — é ter dois e tro
 
 | tarefa | perfil | por quê |
 |---|---|---|
-| `pi`, Cline, modo agente | `agent` (Qwen3-8B) | único com tool calling comprovado |
+| `pi`, Cline, modo agente | `agent` (Qwen3-8B) | tool calling comprovado, 72,5 tok/s |
+| agente em código difícil | `moe` (Qwen3-Coder-30B-A3B) | só Windows; gera 3× mais devagar, faz prefill 1,5× mais rápido |
 | chat e edit no VSCode | `fast` (Qwen2.5-Coder-7B) | escreve código melhor |
 | autocomplete | `tiny`, outra porta | precisa ser leve e não competir |
+
+O `moe` só existe no lado Windows: ele depende de `--n-cpu-moe`, que separa experts de atenção entre RAM e VRAM. Num Mac a memória é unificada e não há essa fronteira para explorar — lá o modelo simplesmente cabe ou não cabe.
 
 ```bash
 ./macos/llm-server.command restart agent    # ~5 segundos

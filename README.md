@@ -225,7 +225,7 @@ O `setup` **não** usa `winget install llama.cpp`: aquele pacote entrega build C
 
 Regra prática, nesta ordem:
 
-1. **Cabe na memória?** Se os pesos não couberem, nada mais importa — veja o precipício acima.
+1. **Cabe na memória?** Se os pesos não couberem, nada mais importa — veja o precipício acima. A exceção são modelos **MoE**, que ativam uma fração dos pesos por token e por isso toleram ficar parcialmente na RAM: é o perfil `moe` do Windows, um 30 B servido numa GPU de 8 GB.
 2. **Precisa chamar ferramentas?** Se sim, precisa de tool calling comprovado, não prometido.
 3. **Só então** pense em qualidade.
 

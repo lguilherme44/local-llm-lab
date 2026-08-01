@@ -130,6 +130,53 @@ Errado inclusive na **relação** entre os dois: a descrição do `tiny` afirmav
 
 ---
 
+## Um MoE de 30B numa GPU de 8 GB
+
+O perfil `moe` serve o **Qwen3-Coder-30B-A3B** (UD-Q3_K_XL, 12,9 GB) numa 3060 Ti de 8 GB. Isso contradiz a regra que o resto desta página defende — "escolha o maior modelo que cabe com folga" — e vale explicar por que a exceção é legítima em vez de sorte.
+
+Num modelo **denso**, cada token lê todos os pesos. Estourar a VRAM significa buscar camadas na RAM a cada token, e é daí que sai o precipício de 28× medido acima.
+
+Num **MoE** isso muda. Dos 30,5 B de parâmetros do Qwen3-Coder, ~29 B estão nos experts, e apenas 8 dos 128 experts são lidos por token. Os ~1,5 B restantes — atenção, embeddings, router — são lidos *sempre*. A divisão que segue esse fato é `--n-cpu-moe 40`: atenção e cache KV na VRAM, 40 das 48 camadas de expert na RAM do sistema.
+
+**Método:** cliente Python contra `/v1/chat/completions`, `temperature: 0`, números do bloco `timings` do servidor. Geração: 6 rodadas, primeira descartada, mediana das outras. Prefill: 3 prompts longos e **distintos entre si** (~2.360 tokens), porque prompt idêntico é servido pelo cache e mede o cache.
+
+| | `agent` (Qwen3-8B denso) | `moe` (Qwen3-Coder-30B-A3B) |
+|---|---|---|
+| geração | 72,5 tok/s | **24,4 tok/s** (23,6–24,5) |
+| prefill | 393 tok/s | **595 tok/s** |
+| VRAM | 6,2 GB | 5,2 GB |
+| RAM do processo | ~0,5 GB | **9,7 GB** |
+| contexto | 16k | 16k |
+| tool calling | ✅ | ✅ |
+
+**O resultado contraintuitivo é o prefill.** O MoE gera 3× mais devagar, mas processa prompt **1,5× mais rápido** que o 8B denso. Não é anomalia: prefill é batched e domina na atenção, que está inteira na GPU; e o modelo só ativa 3 B de parâmetros por token. Para trabalho agêntico — contexto longo reprocessado a cada turno — o prefill é a metade que mais pesa. Os 3× de perda na geração doem menos do que a tabela sugere.
+
+**A primeira medição foi 9,9 tok/s e estava errada.** Com `mmap`, os experts são páginas de arquivo: a primeira geração falta página por página do SSD. Aquecido, são 24,4. Se você medir uma vez e publicar, publica o número do disco, não o do modelo. O `llama.cpp` inclusive avisa no log — `tensor overrides to CPU are used with mmap enabled` — e `--no-mmap` provavelmente melhora, mas não foi testado: nesta máquina não há RAM para a alocação anônima equivalente.
+
+**Roda no limite, e isso não é figura de linguagem:**
+
+```
+VRAM     5,18 GB de 8      (livre: 2,8 GB)
+RAM      9,66 GB no processo
+RAM livre                  0,17 GB
+```
+
+Com 170 MB livres, qualquer aba de navegador nova empurra experts para o pagefile. E aqui o custo não é "fica mais lento": são ~1,3 GB de experts lidos por token, e puxar isso do disco derruba a geração para 1–2 tok/s. O perfil avisa antes de subir quando a RAM não dá.
+
+**Contexto é 16k, não 32k.** O cache KV deste modelo é baratíssimo — 48 KB/token em q8_0, contra 96 KB do 8B, porque a atenção é GQA de 4 kv-heads contra 32 de query. Mesmo assim 32k não entra: o aperto não é o KV, é o total. Com 6,76 GB de VRAM livre e 8,51 de RAM, o orçamento é 15,27 GB, e `12,9 + 1,5 + 0,9 = 15,3`. Passou por 30 MB.
+
+**Três falhas silenciosas no caminho**, todas terminando em status de saída 0 — é isso que as torna caras:
+
+1. `pull` passava `--port 0`. O `llama-server` valida a porta **antes** do download, sai imediatamente e deixa só o diretório vazio no cache do Hugging Face.
+2. `-hf repo:UD-Q3_K_XL` não resolve. O `llama.cpp` casa a tag por nomes de quant padrão (`Q4_K_M` e afins), e os dinâmicos da Unsloth não são. Em vez de falhar, ele **sobe em router mode sem modelo nenhum**: servidor no ar, HTTP respondendo, zero byte baixado. Um `bench` contra isso mede o nada. Daí o campo `File` nos perfis, que baixa com `curl` e serve com `-m`.
+3. Servidor iniciado por SSH morre quando a sessão fecha — o Windows derruba o process tree. O `start` reporta sucesso, porque o health check passa antes da sessão terminar.
+
+E um download truncado em 18,5 MB (de 12,9 GB) que carregou até `blk.47.ffn_up_exps.weight` antes de falhar. Por isso `Test-ModelDownloaded` compara **tamanho** nos perfis com `File`: "o arquivo existe" é a resposta errada para essa pergunta.
+
+**A estimativa que precedeu a medição errou em tudo menos no sinal.** Previu 15–22 tok/s (foram 24,4), VRAM de 6,5 GB (foram 5,2) e 32k de contexto (não coube). O raciocínio — MoE tolera offload, banda de RAM é o teto — apontava a direção certa; os números, não. Vale como lembrete de que estimativa fundamentada continua sendo estimativa.
+
+---
+
 ## Prompt cache: o ganho de 25×
 
 **Método:** a mesma requisição de 3.517 tokens enviada duas vezes seguidas, com `--prompt-cache-size 2 --prompt-cache-bytes 1500000000`.

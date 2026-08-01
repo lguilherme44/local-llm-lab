@@ -262,10 +262,10 @@ $Profiles = @(
     # raciocinio, entao nao ha o que desligar — diferente dos dois Qwen3 base.
     [pscustomobject]@{
         Name = 'moe'; Repo = 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF'; Quant = 'UD-Q3_K_XL'
-        FileGB = 12.9; Ctx = 16384; VramGB = 5.4; RamGB = 9.2; CpuMoe = 40; Tools = $true
+        FileGB = 12.9; Ctx = 16384; VramGB = 5.2; RamGB = 9.7; CpuMoe = 40; Tools = $true
         File = 'Qwen3-Coder-30B-A3B-Instruct-UD-Q3_K_XL.gguf'
         ExtraArgs = @()
-        Desc = 'Qwen3-Coder 30B-A3B (MoE, 3B ativos). O melhor codigo que esta maquina serve. Experts na RAM, atencao na VRAM: espere 15-22 tok/s, nao os 73 do 8B.'
+        Desc = 'Qwen3-Coder 30B-A3B (MoE, 3B ativos). Tool calling validado (ciclo completo). 24,4 tok/s de geracao mas 595 de prefill: gera 3x mais devagar que o 8B e faz prefill 1,5x mais rapido. Sobe com ~0,2 GB de RAM livre — feche o navegador.'
     },
     [pscustomobject]@{
         Name = 'fast'; Repo = 'bartowski/Qwen2.5-Coder-7B-Instruct-GGUF'; Quant = 'Q4_K_M'

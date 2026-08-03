@@ -75,6 +75,40 @@ WARMUP_PROMPT = "Liste três tipos primitivos de TypeScript, um por linha."
 PERF_PROMPT = ("Escreva uma função de busca binária em Python com docstring "
                "e três casos de teste.")
 
+# Prefill precisa de prompt LONGO, senão a métrica é ruído.
+#
+# Com o prompt curto acima (~30 tokens) o llama.cpp reportou 17-31 tok/s de
+# prefill; com um prompt de 715 tokens, o MESMO servidor reportou 314 tok/s. A
+# diferença é overhead fixo dividido por pouquíssimos tokens — não velocidade de
+# prefill. Medir prefill com prompt curto foi um erro herdado do
+# `llm-server.sh bench`, e ele torna a coluna inutilizável.
+#
+# Um prompt de ~1.5k tokens também é mais representativo do uso real: um agente
+# manda contexto de repositório, não uma frase.
+# O parâmetro `seed` varia o prompt a cada rodada, e ele entra no INÍCIO.
+#
+# Sem isso, medir prefill várias vezes com o mesmo prompt mede o prompt cache: a
+# rodada 1 processa 3154 tokens e as seguintes processam 4, porque o llama.cpp
+# reaproveita o prefixo (`selected slot by LCP similarity` no log). Foi
+# exatamente o defeito do warmup antigo, reintroduzido por descuido.
+#
+# Variar no fim não resolveria: o cache casa por prefixo comum.
+def _build_prefill_prompt(seed: int) -> str:
+    bloco = (
+        "def handler_{i:03d}(payload, *, retries={r}):\n"
+        '    """Processa o evento {i:03d} do barramento {s}."""\n'
+        "    for tentativa in range(retries):\n"
+        "        resultado = dispatch(payload, timeout={t})\n"
+        "        if resultado.ok:\n"
+        "            return resultado\n"
+        "    raise RuntimeError('handler {i:03d} esgotou as tentativas')\n\n"
+    )
+    corpo = "".join(
+        bloco.format(i=i, r=i % 4 + 1, t=500 + i * 13 + seed * 7, s=seed)
+        for i in range(40))
+    return (f"Revisão {seed}. Leia o código abaixo e responda em uma única "
+            f"frase o que ele faz.\n\n```python\n{corpo}```")
+
 
 # ─── suíte de performance ───────────────────────────────────────────────────────
 
@@ -98,6 +132,16 @@ def run_performance(client: InferenceClient, monitor: RemoteHardwareMonitor,
     finally:
         hardware = monitor.stop()
 
+    # Prefill medido à parte, com prompt longo. Ver PREFILL_PROMPT.
+    print("     📥 prefill com prompt longo (~1.5k tokens)")
+    prefill_runs: List[GenResult] = []
+    for i in range(1, min(rounds, 3) + 1):
+        pr = client.generate(_build_prefill_prompt(i), max_tokens=32)
+        prefill_runs.append(pr)
+        rate = f"{pr.prefill_rate:.0f}" if pr.prefill_rate else "?"
+        print(f"     [{i}] {pr.prompt_tokens} tok de prompt → {rate} tok/s")
+        time.sleep(1.0)
+
     ok = [r for r in results if r.ok]
     sources = {r.metrics_source for r in ok}
 
@@ -107,9 +151,14 @@ def run_performance(client: InferenceClient, monitor: RemoteHardwareMonitor,
         "ttft": describe([r.ttft for r in ok if r.ttft is not None], "TTFT (s)"),
         "gen_rate": describe([r.gen_rate for r in ok if r.gen_rate is not None],
                              "geração (tok/s)"),
+        # Só do prompt longo. O prefill das rodadas de geração fica fora de
+        # propósito: prompt de ~30 tokens mede overhead, não prefill.
         "prefill_rate": describe(
-            [r.prefill_rate for r in ok if r.prefill_rate is not None],
-            "prefill (tok/s)"),
+            [r.prefill_rate for r in prefill_runs
+             if r.ok and r.prefill_rate is not None],
+            "prefill (tok/s, prompt longo)"),
+        "prefill_prompt_tokens": next(
+            (r.prompt_tokens for r in prefill_runs if r.prompt_tokens), None),
         "hardware": hardware,
         # Se algum número veio de estimativa do cliente, o relatório precisa
         # dizer — comparar servidor com estimativa é comparar coisas diferentes.

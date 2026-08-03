@@ -1,6 +1,6 @@
 # Benchmark — Local LLM Lab
 
-Execução: 2026-08-03T21:33:57+00:00
+Execução: 2026-08-03T22:05:50+00:00
 
 ## Ambiente
 
@@ -18,7 +18,7 @@ Execução: 2026-08-03T21:33:57+00:00
 
 | Modelo | TTFT med | Geração med | Prefill med | VRAM pico | RAM pico | Swap pico | Confiável |
 |---|---|---|---|---|---|---|---|
-| Qwen 3.6 35B-A3B MoE | 0.4 s | 36.74 tok/s | 24.88 tok/s | 6.93 GB | 3.58 GB | 2.98 GB | sim |
+| Qwen 3.6 35B-A3B MoE | 0.29 s | 37.07 tok/s | 341.81 tok/s | 6.93 GB | 3.69 GB | 2.78 GB | sim |
 
 ## Notas de método
 

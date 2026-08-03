@@ -1,27 +1,24 @@
-# Benchmark Report
+# Benchmark Report — substituído
 
-## Model: DeepSeek‑Coder‑V2‑Lite
-- **Median throughput:** ~18 tok/s (benchmark completed successfully).
-- **Landing page:** Generated successfully.
-  - File: [index.html](file:///Users/guilhermelellis/Desktop/local-llm-lab/examples/landing-page-deepseek-v2-lite/index.html)
-  - README: [README.md](file:///Users/guilhermelellis/Desktop/local-llm-lab/examples/landing-page-deepseek-v2-lite/README.md)
-- **Issues:** None detected.
+Este arquivo era escrito à mão a partir do `scripts/run_moe_benchmark_pipeline.py` e o
+conteúdo estava errado. Ele afirmava:
 
-## Model: Unsloth‑Qwen3.6‑35B‑MoE
-- **Benchmark status:** *(pending / not yet executed)*
-- **Landing page:** *(not generated yet)*
-- **Notes:** Need to run `run_moe_benchmark_pipeline` for profile `unsloth` and generate landing page.
+> **Issues:** None detected.
 
-## Model: Bonsai‑27B (Prism‑ML) – gguf
-- **Benchmark status:** Pending download and test.
-- **Landing page:** Pending generation.
-- **Notes:** Ensure model is pulled via `llm-server.sh pull bonsai` and then run benchmark + landing page generation.
+para modelos cujo `index.html` estava cortado no meio de uma tag. O pipeline não
+registrava `finish_reason`, então não tinha como detectar a truncagem, e o relatório
+herdou essa cegueira.
 
----
+O relatório atual é gerado automaticamente:
 
-### Next Steps
-1. Execute benchmark for **Unsloth‑Qwen3.6‑35B‑MoE** and generate its landing page.
-2. Pull and benchmark **Bonsai‑27B‑gguf**, then generate its landing page.
-3. Commit this documentation (and any newly generated files) using conventional commits.
+```bash
+python3 scripts/run_benchmark.py
+```
 
-*All actions will be recorded in Engram for future reference.*
+- **[`benchmark-report/BENCHMARK.md`](benchmark-report/BENCHMARK.md)** — para ler
+- `benchmark-report/benchmark_summary.json` — para processar
+- `benchmark-report/responses/<perfil>/` — resposta bruta de cada tarefa, para auditar
+  um FAIL
+
+Por que o anterior não servia:
+[`docs/diagnostico-linux-benchmark.md`](docs/diagnostico-linux-benchmark.md).

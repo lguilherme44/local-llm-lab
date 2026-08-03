@@ -99,6 +99,7 @@ get_profiles() {
 agent|Qwen/Qwen3-8B-GGUF|Q4_K_M|5.03|16384|6.24|0.5|0|sim||--reasoning off|Qwen3 8B. Tool calling validado (ciclo completo). ~73 tok/s de geracao nesta 3060 Ti. Padrao.
 fast|Qwen/Qwen2.5-Coder-7B-Instruct-GGUF|Q4_K_M|4.30|16384|5.40|0.5|0|nao|||Qwen2.5 Coder 7B. Especialista em código puro, ~80 tok/s. Não serve como agente.
 moe|HauhauCS/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive|IQ4_NL|18.42|16384|6.17|12.5|36|sim|Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-IQ4_NL.gguf|--reasoning off|Qwen3.6 35B MoE (3B ativos). 36 camadas de expert na RAM, atencao na VRAM. ~26 tok/s.
+deepseek|bartowski/DeepSeek-Coder-V2-Lite-Instruct-GGUF|Q8_0|15.56|16384|8.00|8.0|16|sim|DeepSeek-Coder-V2-Lite-Instruct-Q8_0.gguf||DeepSeek Coder V2 Lite 16B MoE (2.4B ativos) em Q8_0. Máxima precisão para código.
 quality|bartowski/gemma-4-12B-it-GGUF|Q4_K_M|7.30|8192|7.80|1.0|0|sim|||Gemma 4 12B. Aceita imagens e texto. Exige liberar VRAM para rodar liso.
 tiny|Qwen/Qwen2.5-Coder-3B-Instruct-GGUF|Q4_K_M|2.00|16384|2.90|0.3|0|nao|||Qwen2.5 Coder 3B. Leve, ~110 tok/s. Ótimo para autocompletar e testes rápidos.
 EOF
@@ -213,7 +214,7 @@ cmd_start() {
     local model_path="$MODEL_DIR/$file"
     if [[ ! -f "$model_path" ]]; then
       echo "${YLW}Baixando peso $file...${R}"
-      curl -sL "https://huggingface.co/$repo/resolve/main/$file" -o "$model_path"
+      curl -C - -L "https://huggingface.co/$repo/resolve/main/$file" -o "$model_path"
     fi
     ARGS+=("-m" "$model_path")
   else
@@ -412,6 +413,29 @@ if gen_rates:
 "
 }
 
+# ─── comando: pull ──────────────────────────────────────────────────────────────
+cmd_pull() {
+  local prof_name="${1:-$DEFAULT_PROFILE}"
+  local p_data
+  p_data=$(find_profile "$prof_name") || { echo "${RED}Perfil '$prof_name' não existe.${R}"; exit 1; }
+  IFS='|' read -r name repo quant file_gb ctx vram_gb ram_gb cpu_moe tools file extra_args desc <<< "$p_data"
+
+  mkdir -p "$MODEL_DIR"
+  if [[ -n "$file" ]]; then
+    local model_path="$MODEL_DIR/$file"
+    if [[ -f "$model_path" ]]; then
+      echo "${GRN}✓ Modelo '$prof_name' ($file) já está baixado em $model_path${R}"
+      return 0
+    fi
+    echo "${B}Baixando peso do perfil '$prof_name' ($file_gb GB)...${R}"
+    curl -C - -L "https://huggingface.co/$repo/resolve/main/$file" -o "$model_path"
+    echo "${GRN}✓ Download concluído com sucesso em $model_path!${R}"
+  else
+    echo "Baixando repositório HF $repo ($quant)..."
+    "$LLAMA_SERVER" -hf "$repo:$quant" --version || true
+  fi
+}
+
 # ─── comando: models ────────────────────────────────────────────────────────────
 cmd_models() {
   echo "${B}Perfis de Modelos Disponíveis (Linux/CUDA):${R}"
@@ -457,6 +481,9 @@ case "$COMMAND" in
     ;;
   models)
     cmd_models
+    ;;
+  pull)
+    cmd_pull "${1:-$DEFAULT_PROFILE}"
     ;;
   bench)
     cmd_bench "${1:-4}"

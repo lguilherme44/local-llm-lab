@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="scroll-smooth">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BarberBook — a agenda que não deixa cadeira vazia</title>
+<meta name="description" content="Agendamento online, lembretes automáticos e fila de espera inteligente para barbearias. Reduza faltas em até 70%.">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    darkMode: 'class',
+    theme: {
+      extend: {
+        fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+        colors: {
+          ink:   { 950:'#0a0a0b', 900:'#131316', 800:'#1e1e23', 700:'#2c2c33' },
+          brand: { 50:'#eefbf4', 200:'#a7ecc8', 400:'#34d187', 500:'#10b96e', 600:'#059256', 700:'#047345' },
+        },
+        keyframes: {
+          fadeIn:   { '0%':{opacity:'0'}, '100%':{opacity:'1'} },
+          slideUp:  { '0%':{opacity:'0', transform:'translateY(24px)'}, '100%':{opacity:'1', transform:'translateY(0)'} },
+          slideIn:  { '0%':{opacity:'0', transform:'translateX(-24px)'}, '100%':{opacity:'1', transform:'translateX(0)'} },
+          floaty:   { '0%,100%':{transform:'translateY(0)'}, '50%':{transform:'translateY(-10px)'} },
+          shimmer:  { '0%':{backgroundPosition:'-200% 0'}, '100%':{backgroundPosition:'200% 0'} },
+        },
+        animation: {
+          'fade-in':  'fadeIn .6s ease-out both',
+          'slide-up': 'slideUp .7s cubic-bezier(.16,1,.3,1) both',
+          'slide-in': 'slideIn .7s cubic-bezier(.16,1,.3,1) both',
+          'floaty':   'floaty 6s ease-in-out infinite',
+          'shimmer':  'shimmer 3s linear infinite',
+        },
+      },
+    },
+  }
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  /* Só o que utilitário não resolve: o estado inicial do reveal e o respeito
+     à preferência de menos movimento. */
+  [data-reveal] { opacity: 0; }
+  [data-reveal].is-in { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+    [data-reveal] { opacity: 1 !important; }
+  }
+  .mesh {
+    background-image:
+      radial-gradient(45rem 30rem at 15% -10%, rgba(16,185,110,.20), transparent 60%),
+      radial-gradient(40rem 28rem at 95% 5%,  rgba(56,189,248,.14), transparent 60%);
+  }
+</style>
+</head>
+
+<body class="bg-white text-ink-900 antialiased dark:bg-ink-950 dark:text-zinc-100 selection:bg-brand-400/30">
+
+<a href="#main" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-brand-600 focus:px-4 focus:py-2 focus:text-white">Pular para o conteúdo</a>
+
+<!-- HEADER — glassmorphism, fixo -->
+<header class="fixed inset-x-0 top-0 z-40 border-b border-black/5 bg-white/70 backdrop-blur-xl transition-all duration-300 dark:border-white/10 dark:bg-ink-950/60">
+  <nav class="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6 lg:px-8">
+    <a href="#" class="group flex items-center gap-2 font-extrabold tracking-tight">
+      <span class="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-brand-400 to-brand-600 text-white shadow-lg shadow-brand-500/25 transition-transform duration-300 group-hover:rotate-6 group-hover:scale-110">B</span>
+      <span class="text-lg">Barber<span class="text-brand-600 dark:text-brand-400">Book</span></span>
+    </a>
+
+    <ul class="hidden items-center gap-1 md:flex">
+      <li><a href="#recursos"    class="rounded-lg px-3 py-2 text-sm font-medium text-ink-700 transition-all duration-300 hover:bg-black/5 hover:text-ink-950 dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-white">Recursos</a></li>
+      <li><a href="#depoimentos" class="rounded-lg px-3 py-2 text-sm font-medium text-ink-700 transition-all duration-300 hover:bg-black/5 hover:text-ink-950 dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-white">Clientes</a></li>
+      <li><a href="#precos"      class="rounded-lg px-3 py-2 text-sm font-medium text-ink-700 transition-all duration-300 hover:bg-black/5 hover:text-ink-950 dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-white">Preços</a></li>
+    </ul>
+
+    <div class="flex items-center gap-2">
+      <button id="tema" type="button" aria-label="Alternar tema"
+        class="grid h-9 w-9 place-items-center rounded-lg border border-black/10 text-ink-700 transition-all duration-300 hover:-translate-y-0.5 hover:border-brand-500 hover:text-brand-600 hover:shadow-lg dark:border-white/15 dark:text-zinc-300 dark:hover:text-brand-400">
+        <svg class="h-4 w-4 dark:hidden" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
+        <svg class="hidden h-4 w-4 dark:block" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path stroke-linecap="round" d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+      </button>
+      <a href="#precos" class="rounded-lg bg-gradient-to-r from-brand-500 to-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-brand-500/25 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-brand-500/40 active:translate-y-0">
+        Testar grátis
+      </a>
+    </div>
+  </nav>
+</header>
+
+<main id="main">
+
+<!-- HERO -->
+<section class="mesh relative overflow-hidden pt-32 pb-20 sm:pt-40 sm:pb-28">
+  <div class="mx-auto grid max-w-6xl items-center gap-12 px-4 sm:px-6 lg:grid-cols-2 lg:gap-16 lg:px-8">
+    <div>
+      <span class="inline-flex animate-fade-in items-center gap-2 rounded-full border border-brand-500/25 bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-700 dark:bg-brand-500/10 dark:text-brand-400">
+        <span class="relative flex h-2 w-2">
+          <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand-500 opacity-75"></span>
+          <span class="relative inline-flex h-2 w-2 rounded-full bg-brand-500"></span>
+        </span>
+        Usado por 1.200+ barbearias
+      </span>
+
+      <h1 class="mt-6 animate-slide-up text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-5xl lg:text-6xl">
+        A agenda que não<br class="hidden sm:block">
+        deixa <span class="bg-gradient-to-r from-brand-500 to-sky-500 bg-clip-text text-transparent">cadeira vazia</span>.
+      </h1>
+
+      <p class="mt-5 max-w-lg animate-slide-up text-base leading-relaxed text-ink-700 [animation-delay:120ms] dark:text-zinc-400 sm:text-lg">
+        Agendamento online, lembretes automáticos por WhatsApp e fila de espera que preenche cancelamentos sozinha. Suas faltas caem até <strong class="font-semibold text-ink-950 dark:text-white">70%</strong>.
+      </p>
+
+      <div class="mt-8 flex animate-slide-up flex-col gap-3 [animation-delay:240ms] sm:flex-row">
+        <a href="#precos" class="group inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-brand-500 to-brand-600 px-6 py-3.5 font-semibold text-white shadow-lg shadow-brand-500/25 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl hover:shadow-brand-500/40 active:translate-y-0">
+          Começar 14 dias grátis
+          <svg class="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14m-6-6 6 6-6 6"/></svg>
+        </a>
+        <a href="#recursos" class="inline-flex items-center justify-center rounded-xl border border-black/10 px-6 py-3.5 font-semibold transition-all duration-300 hover:-translate-y-1 hover:border-brand-500 hover:shadow-xl dark:border-white/15">
+          Ver como funciona
+        </a>
+      </div>
+
+      <p class="mt-5 animate-fade-in text-xs text-ink-700/70 [animation-delay:360ms] dark:text-zinc-500">Sem cartão de crédito · Cancele quando quiser</p>
+    </div>
+
+    <!-- Mock de agenda -->
+    <div data-reveal class="relative lg:animate-floaty">
+      <div class="absolute -inset-6 rounded-[2rem] bg-gradient-to-tr from-brand-500/20 to-sky-500/20 blur-3xl"></div>
+      <div class="relative rounded-2xl border border-black/5 bg-white/80 p-5 shadow-2xl backdrop-blur-xl transition-all duration-500 hover:-translate-y-1 hover:shadow-brand-500/10 dark:border-white/10 dark:bg-ink-900/80">
+        <div class="mb-4 flex items-center justify-between">
+          <p class="text-sm font-semibold">Hoje · Terça</p>
+          <span class="rounded-full bg-brand-50 px-2 py-1 text-[11px] font-semibold text-brand-700 dark:bg-brand-500/10 dark:text-brand-400">8 de 9 ocupados</span>
+        </div>
+        <ul class="space-y-2">
+          <li class="flex items-center gap-3 rounded-xl border border-black/5 p-3 transition-all duration-300 hover:-translate-y-0.5 hover:border-brand-500/40 hover:shadow-lg dark:border-white/10">
+            <span class="w-12 shrink-0 text-xs font-semibold tabular-nums text-ink-700 dark:text-zinc-400">09:00</span>
+            <span class="h-8 w-8 shrink-0 rounded-full bg-gradient-to-br from-amber-400 to-orange-500"></span>
+            <span class="min-w-0 flex-1"><span class="block truncate text-sm font-medium">Rafael Souza</span><span class="block text-xs text-ink-700/70 dark:text-zinc-500">Corte + barba</span></span>
+          </li>
+          <li class="flex items-center gap-3 rounded-xl border border-black/5 p-3 transition-all duration-300 hover:-translate-y-0.5 hover:border-brand-500/40 hover:shadow-lg dark:border-white/10">
+            <span class="w-12 shrink-0 text-xs font-semibold tabular-nums text-ink-700 dark:text-zinc-400">10:30</span>
+            <span class="h-8 w-8 shrink-0 rounded-full bg-gradient-to-br from-sky-400 to-indigo-500"></span>
+            <span class="min-w-0 flex-1"><span class="block truncate text-sm font-medium">Diego Martins</span><span class="block text-xs text-ink-700/70 dark:text-zinc-500">Degradê</span></span>
+          </li>
+          <li class="flex items-center gap-3 rounded-xl border border-dashed border-brand-500/40 bg-brand-50/50 p-3 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg dark:bg-brand-500/5">
+            <span class="w-12 shrink-0 text-xs font-semibold tabular-nums text-brand-700 dark:text-brand-400">11:15</span>
+            <span class="min-w-0 flex-1 text-sm font-medium text-brand-700 dark:text-brand-400">Vaga preenchida pela fila de espera</span>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- MÉTRICAS -->
+<section class="border-y border-black/5 bg-zinc-50/60 py-12 dark:border-white/10 dark:bg-ink-900/40">
+  <dl class="mx-auto grid max-w-6xl grid-cols-2 gap-6 px-4 sm:px-6 lg:grid-cols-4 lg:px-8">
+    <div data-reveal class="text-center transition-transform duration-300 hover:-translate-y-1"><dt class="text-3xl font-extrabold text-brand-600 dark:text-brand-400">-70%</dt><dd class="mt-1 text-sm text-ink-700 dark:text-zinc-400">de faltas</dd></div>
+    <div data-reveal class="text-center transition-transform duration-300 hover:-translate-y-1 [animation-delay:100ms]"><dt class="text-3xl font-extrabold text-brand-600 dark:text-brand-400">1.200+</dt><dd class="mt-1 text-sm text-ink-700 dark:text-zinc-400">barbearias</dd></div>
+    <div data-reveal class="text-center transition-transform duration-300 hover:-translate-y-1 [animation-delay:200ms]"><dt class="text-3xl font-extrabold text-brand-600 dark:text-brand-400">4,9</dt><dd class="mt-1 text-sm text-ink-700 dark:text-zinc-400">nota média</dd></div>
+    <div data-reveal class="text-center transition-transform duration-300 hover:-translate-y-1 [animation-delay:300ms]"><dt class="text-3xl font-extrabold text-brand-600 dark:text-brand-400">2 min</dt><dd class="mt-1 text-sm text-ink-700 dark:text-zinc-400">para configurar</dd></div>
+  </dl>
+</section>
+
+<!-- RECURSOS -->
+<section id="recursos" class="scroll-mt-20 py-20 sm:py-28">
+  <div class="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+    <div data-reveal class="mx-auto max-w-2xl text-center">
+      <h2 class="text-3xl font-extrabold tracking-tight sm:text-4xl">Feito para quem corta cabelo,<br class="hidden sm:block"> não para quem gosta de software</h2>
+      <p class="mt-4 text-ink-700 dark:text-zinc-400">Três coisas que resolvem 90% do problema de uma barbearia.</p>
+    </div>
+
+    <div class="mt-14 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+      <article data-reveal class="group rounded-2xl border border-black/5 bg-white p-6 shadow-sm transition-all duration-300 hover:-translate-y-2 hover:border-brand-500/30 hover:shadow-xl hover:shadow-brand-500/10 dark:border-white/10 dark:bg-ink-900">
+        <span class="grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-brand-400 to-brand-600 text-white shadow-lg shadow-brand-500/25 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-3">
+          <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path stroke-linecap="round" d="M16 3v4M8 3v4M3 11h18"/></svg>
+        </span>
+        <h3 class="mt-5 text-lg font-bold">Agenda que o cliente preenche</h3>
+        <p class="mt-2 text-sm leading-relaxed text-ink-700 dark:text-zinc-400">Link único no Instagram. Ele escolhe barbeiro, serviço e horário — e você para de responder DM às onze da noite.</p>
+      </article>
+
+      <article data-reveal class="group rounded-2xl border border-black/5 bg-white p-6 shadow-sm transition-all duration-300 [animation-delay:120ms] hover:-translate-y-2 hover:border-brand-500/30 hover:shadow-xl hover:shadow-brand-500/10 dark:border-white/10 dark:bg-ink-900">
+        <span class="grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-sky-400 to-indigo-500 text-white shadow-lg shadow-sky-500/25 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-3">
+          <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z"/></svg>
+        </span>
+        <h3 class="mt-5 text-lg font-bold">Lembrete no WhatsApp</h3>
+        <p class="mt-2 text-sm leading-relaxed text-ink-700 dark:text-zinc-400">24 h e 2 h antes, automático. Quem não pode ir avisa com antecedência — e a vaga volta para o mercado.</p>
+      </article>
+
+      <article data-reveal class="group rounded-2xl border border-black/5 bg-white p-6 shadow-sm transition-all duration-300 [animation-delay:240ms] hover:-translate-y-2 hover:border-brand-500/30 hover:shadow-xl hover:shadow-brand-500/10 dark:border-white/10 dark:bg-ink-900 sm:col-span-2 lg:col-span-1">
+        <span class="grid h-11 w-11 place-items-center rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-lg shadow-amber-500/25 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-3">
+          <svg class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13 2 3 14h8l-1 8 10-12h-8l1-8Z"/></svg>
+        </span>
+        <h3 class="mt-5 text-lg font-bold">Fila de espera automática</h3>
+        <p class="mt-2 text-sm leading-relaxed text-ink-700 dark:text-zinc-400">Cancelou às 10h? O sistema oferece a vaga para a fila e confirma sozinho. Cadeira vazia é dinheiro parado.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- DEPOIMENTOS -->
+<section id="depoimentos" class="scroll-mt-20 border-y border-black/5 bg-zinc-50/60 py-20 dark:border-white/10 dark:bg-ink-900/40 sm:py-28">
+  <div class="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+    <h2 data-reveal class="text-center text-3xl font-extrabold tracking-tight sm:text-4xl">Quem já parou de perder horário</h2>
+    <div class="mt-14 grid gap-6 md:grid-cols-3">
+      <figure data-reveal class="rounded-2xl border border-black/5 bg-white p-6 transition-all duration-300 hover:-translate-y-1 hover:shadow-xl dark:border-white/10 dark:bg-ink-900">
+        <div class="flex gap-0.5 text-amber-400" aria-label="5 de 5">★★★★★</div>
+        <blockquote class="mt-4 text-sm leading-relaxed text-ink-700 dark:text-zinc-300">"Em dois meses as faltas caíram de 18 para 4 por semana. A fila de espera sozinha já paga a mensalidade."</blockquote>
+        <figcaption class="mt-5 flex items-center gap-3"><span class="h-9 w-9 rounded-full bg-gradient-to-br from-amber-400 to-orange-500"></span><span><span class="block text-sm font-semibold">Marcos Vieira</span><span class="block text-xs text-ink-700/70 dark:text-zinc-500">Barbearia Navalha · SP</span></span></figcaption>
+      </figure>
+      <figure data-reveal class="rounded-2xl border border-black/5 bg-white p-6 transition-all duration-300 [animation-delay:120ms] hover:-translate-y-1 hover:shadow-xl dark:border-white/10 dark:bg-ink-900">
+        <div class="flex gap-0.5 text-amber-400" aria-label="5 de 5">★★★★★</div>
+        <blockquote class="mt-4 text-sm leading-relaxed text-ink-700 dark:text-zinc-300">"Configurei num domingo à tarde, sozinho. No dia seguinte já tinha agendamento entrando pelo Instagram."</blockquote>
+        <figcaption class="mt-5 flex items-center gap-3"><span class="h-9 w-9 rounded-full bg-gradient-to-br from-sky-400 to-indigo-500"></span><span><span class="block text-sm font-semibold">Léo Ferraz</span><span class="block text-xs text-ink-700/70 dark:text-zinc-500">Corte Reto · BH</span></span></figcaption>
+      </figure>
+      <figure data-reveal class="rounded-2xl border border-black/5 bg-white p-6 transition-all duration-300 [animation-delay:240ms] hover:-translate-y-1 hover:shadow-xl dark:border-white/10 dark:bg-ink-900 md:col-span-1">
+        <div class="flex gap-0.5 text-amber-400" aria-label="5 de 5">★★★★★</div>
+        <blockquote class="mt-4 text-sm leading-relaxed text-ink-700 dark:text-zinc-300">"Três cadeiras, três agendas separadas, sem confusão. Meus barbeiros veem só o que é deles."</blockquote>
+        <figcaption class="mt-5 flex items-center gap-3"><span class="h-9 w-9 rounded-full bg-gradient-to-br from-brand-400 to-brand-600"></span><span><span class="block text-sm font-semibold">Ana Beatriz</span><span class="block text-xs text-ink-700/70 dark:text-zinc-500">Studio AB · Curitiba</span></span></figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- PREÇOS -->
+<section id="precos" class="scroll-mt-20 py-20 sm:py-28">
+  <div class="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+    <div data-reveal class="mx-auto max-w-2xl text-center">
+      <h2 class="text-3xl font-extrabold tracking-tight sm:text-4xl">Preço de uma barba por mês</h2>
+      <p class="mt-4 text-ink-700 dark:text-zinc-400">14 dias grátis. Sem cartão, sem fidelidade.</p>
+    </div>
+
+    <div class="mx-auto mt-14 grid max-w-4xl gap-6 md:grid-cols-2">
+      <div data-reveal class="rounded-2xl border border-black/5 bg-white p-8 transition-all duration-300 hover:-translate-y-2 hover:shadow-xl dark:border-white/10 dark:bg-ink-900">
+        <h3 class="text-sm font-bold uppercase tracking-widest text-ink-700 dark:text-zinc-400">Solo</h3>
+        <p class="mt-4"><span class="text-4xl font-extrabold">R$ 49</span><span class="text-ink-700 dark:text-zinc-400">/mês</span></p>
+        <p class="mt-2 text-sm text-ink-700 dark:text-zinc-400">Para quem trabalha sozinho.</p>
+        <ul class="mt-6 space-y-3 text-sm">
+          <li class="flex gap-2"><span class="text-brand-600 dark:text-brand-400">✓</span> 1 profissional</li>
+          <li class="flex gap-2"><span class="text-brand-600 dark:text-brand-400">✓</span> Agendamento online</li>
+          <li class="flex gap-2"><span class="text-brand-600 dark:text-brand-400">✓</span> Lembretes no WhatsApp</li>
+        </ul>
+        <a href="#" class="mt-8 block rounded-xl border border-black/10 px-5 py-3 text-center font-semibold transition-all duration-300 hover:-translate-y-0.5 hover:border-brand-500 hover:shadow-lg dark:border-white/15">Começar grátis</a>
+      </div>
+
+      <div data-reveal class="relative rounded-2xl border-2 border-brand-500 bg-white p-8 shadow-xl shadow-brand-500/10 transition-all duration-300 [animation-delay:120ms] hover:-translate-y-2 hover:shadow-2xl hover:shadow-brand-500/20 dark:bg-ink-900">
+        <span class="absolute -top-3 left-8 rounded-full bg-gradient-to-r from-brand-500 to-brand-600 px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-white shadow-lg">Mais escolhido</span>
+        <h3 class="text-sm font-bold uppercase tracking-widest text-brand-600 dark:text-brand-400">Equipe</h3>
+        <p class="mt-4"><span class="text-4xl font-extrabold">R$ 129</span><span class="text-ink-700 dark:text-zinc-400">/mês</span></p>
+        <p class="mt-2 text-sm text-ink-700 dark:text-zinc-400">Até 6 cadeiras, agendas separadas.</p>
+        <ul class="mt-6 space-y-3 text-sm">
+          <li class="flex gap-2"><span class="text-brand-600 dark:text-brand-400">✓</span> Tudo do Solo</li>
+          <li class="flex gap-2"><span class="text-brand-600 dark:text-brand-400">✓</span> Fila de espera automática</li>
+          <li class="flex gap-2"><span class="text-brand-600 dark:text-brand-400">✓</span> Relatório de faturamento</li>
+          <li class="flex gap-2"><span class="text-brand-600 dark:text-brand-400">✓</span> Comissão por barbeiro</li>
+        </ul>
+        <a href="#" class="mt-8 block rounded-xl bg-gradient-to-r from-brand-500 to-brand-600 px-5 py-3 text-center font-semibold text-white shadow-lg shadow-brand-500/25 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-brand-500/40">Testar 14 dias grátis</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="px-4 pb-20 sm:px-6 lg:px-8">
+  <div data-reveal class="mx-auto max-w-5xl overflow-hidden rounded-3xl bg-gradient-to-r from-brand-600 via-brand-500 to-sky-500 px-8 py-14 text-center shadow-2xl shadow-brand-500/20 sm:px-14">
+    <h2 class="text-3xl font-extrabold tracking-tight text-white sm:text-4xl">Quantas cadeiras vazias você teve essa semana?</h2>
+    <p class="mx-auto mt-4 max-w-xl text-white/85">Descubra em 14 dias, sem pagar nada.</p>
+    <a href="#" class="mt-8 inline-flex items-center gap-2 rounded-xl bg-white px-7 py-3.5 font-bold text-brand-700 shadow-lg transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl active:translate-y-0">
+      Criar minha conta
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14m-6-6 6 6-6 6"/></svg>
+    </a>
+  </div>
+</section>
+
+</main>
+
+<footer class="border-t border-black/5 py-10 dark:border-white/10">
+  <div class="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-4 text-sm text-ink-700 dark:text-zinc-400 sm:flex-row sm:px-6 lg:px-8">
+    <p>© 2026 BarberBook. Produto fictício, gerado como exemplo.</p>
+    <ul class="flex gap-5">
+      <li><a href="#" class="transition-colors duration-300 hover:text-brand-600 dark:hover:text-brand-400">Termos</a></li>
+      <li><a href="#" class="transition-colors duration-300 hover:text-brand-600 dark:hover:text-brand-400">Privacidade</a></li>
+      <li><a href="#" class="transition-colors duration-300 hover:text-brand-600 dark:hover:text-brand-400">Contato</a></li>
+    </ul>
+  </div>
+</footer>
+
+<script>
+  // Tema: respeita a escolha salva, senão segue o sistema.
+  const raiz = document.documentElement;
+  const salvo = localStorage.getItem('tema');
+  if (salvo === 'dark' || (!salvo && matchMedia('(prefers-color-scheme: dark)').matches)) raiz.classList.add('dark');
+  document.getElementById('tema').addEventListener('click', () => {
+    raiz.classList.toggle('dark');
+    localStorage.setItem('tema', raiz.classList.contains('dark') ? 'dark' : 'light');
+  });
+
+  // Entrada por seção: a classe de animação só entra quando o elemento aparece,
+  // senão tudo anima de uma vez fora da tela e o usuário não vê nada.
+  const io = new IntersectionObserver((entradas) => {
+    entradas.forEach((e) => {
+      if (!e.isIntersecting) return;
+      e.target.classList.add('is-in', 'animate-slide-up');
+      io.unobserve(e.target);
+    });
+  }, { threshold: 0.12, rootMargin: '0px 0px -40px' });
+  document.querySelectorAll('[data-reveal]').forEach((el) => io.observe(el));
+</script>
+
+</body>
+</html>

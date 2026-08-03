@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Local LLM Lab</title>
+    <link href="https://cdn.tailwindcss.com" rel="stylesheet">
+    <style>
+        /* Glassmorphism effect */
+        .glass {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        /* Neon hover effect */
+        .neon-button {
+            background: linear-gradient(45deg, #ff00cc, #3333ff);
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .neon-button:hover {
+            background: linear-gradient(45deg, #3333ff, #ff00cc);
+            box-shadow: 0 0 10px #ff00cc, 0 0 20px #3333ff, 0 0 30px #ff00cc;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white">
+    <header class="fixed top-0 left-0 w-full p-4 glass">
+        <div class="container mx-auto flex justify-between items-center">
+            <h1 class="text-2xl font-bold">Local LLM Lab</h1>
+            <nav>
+                <ul class="flex space-x-4">
+                    <li><a href="#features" class="hover:text-gray-400">Features</a></li>
+                    <li><a href="#benchmarks" class="hover:text-gray-400">Benchmarks</a></li>
+                    <li><a href="#testimonials" class="hover:text-gray-400">Testimonials</a></li>
+                    <li><a href="#contact" class="neon-button">Contact Us</a></li>
+                </ul>
+            </nav>
+        </div>
+    </header>
+
+    <section class="hero min-h-screen flex items-center justify-center bg-gray-800">
+        <div class="text-center">
+            <h2 class="text-5xl font-bold mb-4">Welcome to Local LLM Lab</h2>
+            <p class="text-lg mb-8">Your Gateway to Running and Testing Open Source LLMs Locally</p>
+            <a href="#" class="neon-button">Get Started</a>
+        </div>
+    </section>
+
+    <section id="features" class="container mx-auto p-8">
+        <h2 class="text-3xl font-bold mb-4">Key Features</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div class="glass p-4">
+                <h3 class="text-xl font-bold mb-2">GPU Acceleration</h3>
+                <p>Leverage your GPU for faster LLM training and inference.</p>
+            </div>
+            <div class="glass p-4">
+                <h3 class="text-xl font-bold mb-2">Open Source Ecosystem</h3>
+                <p>Access a wide range of open source LLMs for testing and development.</p>
+            </div>
+            <div class="glass p-4">
+                <h3 class="text-xl font-bold mb-2">Cross-Platform Compatibility</h3>
+                <p>Run your models on Linux, Windows, or macOS with ease.</p>
+            </div>
+        </div>
+    </section>
+
+    <section id="benchmarks" class="container mx-auto p-8">
+        <h2 class="text-3xl font-bold mb-4">Benchmarks Comparativos</h2>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div class="glass p-4">
+                <h3 class="text-xl font-bold mb-2">Mac Performance</h3>
+                <p>Experience top-tier performance on macOS.</p>
+            </div>
+            <div class="glass p-4">
+                <h3 class="text-xl font-bold mb-2">Linux Stability</h3>
+                <p>Ideal for developers and sysadmins seeking stability.</p>
+            </div>
+            <div class="glass p-4">
+                <h3 class="text-xl font-bold mb-2">Windows Support</h3>
+                <p>Full support for Windows users looking to integrate LLMs.</p>
+            </div>
+        </div>
+    </section>
+
+    <section id="testimonials" class="container mx-auto p-8">
+        <h2 class="text-3xl font-bold mb-4">What Our Users Say</h2>
+        <div class="space-y-4">
+            <div class="glass p-4">
+                <p>"Local LLM Lab has been a game-changer for my AI projects."</p>
+                <p class="text-right">- John Doe, AI Developer</p>
+            </div>
+            <div class="glass p-4">
+                <p>"The GPU acceleration is unmatched. Highly recommended!"</p>
+                <p class="text-right">- Jane Smith, Data Scientist</p>
+            </div>
+        </div>
+    </section>
+
+    <section id="contact" class="container mx-auto p-8">
+        <h2 class="text-3xl font-bold mb-4">Contact Us</h2>
+        <form class="space-y-4">
+            <input type="text" placeholder="Name" class="w-full p-2 glass">
+            <input type="email" placeholder="Email" class="w-full p-2 glass">
+            <textarea placeholder="Message" class="w-full p-2 glass"></textarea>
+            <button type="submit" class="neon-button">Submit</button>
+        </form>
+    </section>
+
+    <script>
+        // Example JavaScript for mobile menu toggle
+        const menuToggle = document.querySelector('.menu-toggle');
+        const nav = document.querySelector('nav');
+
+        menuToggle.addEventListener('click', () => {
+            nav.classList.toggle('hidden');
+        });
+    </script>
+</body>
+</html>

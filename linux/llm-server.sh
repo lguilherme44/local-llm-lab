@@ -215,11 +215,16 @@ cmd_start() {
   echo "${B}Subindo llm-server [perfil: ${CYA}$prof_name${R}${B}]...${R}"
   echo "${DIM}Modelo: $repo ($quant) | Ctx: $final_ctx | Host: $BIND_HOST:$PORT${R}"
 
+  local default_ngl=28
+  if [[ "$cpu_moe" -gt 0 ]]; then
+    default_ngl="$cpu_moe"
+  fi
+
   local ARGS=(
     "--host" "$BIND_HOST"
     "--port" "$PORT"
     "-c" "$final_ctx"
-    "-ngl" "${LLM_NGL:-28}"
+    "-ngl" "${LLM_NGL:-$default_ngl}"
     "--api-key" "$API_KEY"
   )
 

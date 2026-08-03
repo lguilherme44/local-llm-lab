@@ -14,6 +14,10 @@ Não é uma coleção de comandos copiados de tutorial. Cada tok/s aqui saiu de 
 ./macos/llm-server.command start agent
 ./macos/llm-server.command ask "Escreva um debounce genérico em TypeScript"
 
+# Linux (NVIDIA / CUDA via SSH)
+ssh lellis@192.168.3.51 "~/local-llm-lab/linux/llm-server.sh start moe --ctx 32768"
+ssh lellis@192.168.3.51 "~/local-llm-lab/linux/llm-server.sh ask 'Explique a diferença de Q4 e Q3'"
+
 # Windows (NVIDIA)
 .\windows\llm-server.ps1 setup
 .\windows\llm-server.ps1 start tiny
@@ -50,6 +54,8 @@ Servidor que não responde nem sempre está travado. Neste repositório document
 ### Scripts
 
 ```
+linux/
+  llm-server.sh           servidor llama.cpp + CUDA para Linux (Pop!_OS / Ubuntu)
 macos/
   llm-server.command      servidor MLX (API OpenAI) + gestão de modelos
   clean.sh                libera espaço em disco, dry-run por padrão
@@ -231,6 +237,28 @@ uv tool install --python 3.12 huggingface_hub
 ```
 
 Por que `uv tool` e não `pip`: cada pacote ganha um Python isolado, sem colidir com o Python do sistema nem cair no `externally-managed-environment`. E o `--python 3.12` evita a falta de wheels em versões muito novas.
+
+### Linux (NVIDIA / CUDA via SSH)
+
+No Linux (Pop!_OS, Ubuntu, Debian), o script `linux/llm-server.sh` gerencia o `llama-server` nativamente com suporte a CUDA.
+
+```bash
+# 1. Configurar o ambiente (baixa e instala o llama-server)
+./linux/llm-server.sh setup
+
+# 2. Subir o perfil MoE (padrão 16k de contexto)
+./linux/llm-server.sh start moe
+
+# 3. Subir o perfil MoE com tamanho de contexto customizado (ex: 32k tokens)
+./linux/llm-server.sh start moe --ctx 32768
+# ou via variável de ambiente:
+LLM_CTX=32768 ./linux/llm-server.sh start moe
+
+# 4. Gerenciar tudo remotamente a partir do Mac via SSH:
+ssh lellis@192.168.3.51 "~/local-llm-lab/linux/llm-server.sh status"
+ssh lellis@192.168.3.51 "~/local-llm-lab/linux/llm-server.sh start moe --ctx 32768"
+ssh lellis@192.168.3.51 "~/local-llm-lab/linux/llm-server.sh ask 'Explique a diferença entre Q4 e Q3'"
+```
 
 ### Windows (NVIDIA)
 

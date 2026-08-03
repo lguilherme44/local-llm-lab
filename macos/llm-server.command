@@ -557,8 +557,12 @@ cmd_gc() {
 }
 
 cmd_pull() {
-  local profile repo size avail
-  profile="$(resolve_profile "${1:-}")" || exit 1
+  local target="${1:-}" profile repo size avail
+  if [[ "$target" == *"/"* ]]; then
+    cmd_add "$target"
+    return $?
+  fi
+  profile="$(resolve_profile "$target")" || exit 1
   repo="$(pf "$profile" 2)"; size="$(pf "$profile" 3)"
 
   is_downloaded "$repo" && { ok "$profile já baixado"; return 0; }
@@ -571,6 +575,22 @@ cmd_pull() {
   say "${DIM}$repo${R}"
   "$BIN_DIR/hf" download "$repo" || die "Falha no download."
   ok "Pesos prontos."
+}
+
+cmd_import() {
+  local src="${1:-}"
+  [[ -n "$src" ]] || die "Uso: $(basename "$0") import <caminho_do_arquivo_ou_pasta>"
+  [[ -e "$src" ]] || die "Arquivo ou pasta não encontrado: $src"
+
+  local dest_dir="$RUN_DIR/custom_models"
+  mkdir -p "$dest_dir"
+
+  local fname
+  fname="$(basename "$src")"
+  head_ "Importando modelo customizado: $fname"
+
+  cp -R "$src" "$dest_dir/" || die "Falha ao copiar $src para $dest_dir"
+  ok "Modelo $fname importado com sucesso em $dest_dir/$fname"
 }
 
 # Health check de verdade: mlx_*.server responde /v1/models ANTES de carregar
@@ -886,6 +906,7 @@ case "${1:-start}" in
   models|list)    cmd_models ;;
   pull)           shift || true; cmd_pull    "${1:-}" ;;
   add|download)   shift || true; cmd_add     "${1:-}" ;;
+  import)         shift || true; cmd_import  "${1:-}" ;;
   rm|remove|del)  shift || true; cmd_rm      "${1:-}" "${2:-}" ;;
   archive)        shift || true; cmd_archive "${1:-}" ;;
   restore)        shift || true; cmd_restore "${1:-}" ;;

@@ -1,0 +1,324 @@
+{
+  "started_at": "2026-08-03T21:33:57+00:00",
+  "environment": {
+    "ggml_backends": [
+      "base",
+      "cpu-alderlake",
+      "cpu-cannonlake",
+      "cpu-cascadelake",
+      "cpu-cooperlake",
+      "cpu-haswell",
+      "cpu-icelake",
+      "cpu-ivybridge",
+      "cpu-piledriver",
+      "cpu-sandybridge",
+      "cpu-sapphirerapids",
+      "cpu-skylakex",
+      "cpu",
+      "cpu-sse42",
+      "cpu-x64",
+      "cpu-zen4",
+      "cuda",
+      "rpc",
+      "vulkan"
+    ],
+    "has_cuda": true,
+    "has_vulkan": true,
+    "gpu": "NVIDIA GeForce RTX 3060 Ti, 8192 MiB, 595.84"
+  },
+  "config": {
+    "perf_rounds": 4,
+    "repeats": 1,
+    "skip_perf": false
+  },
+  "results": [
+    {
+      "name": "Qwen 3.6 35B-A3B MoE",
+      "profile": "moe",
+      "ctx": 16384,
+      "status": "ok",
+      "effective_cmdline": "-c 16384 | -ngl 99 | -ctk q8_0 | -fa on | --n-cpu-moe 30",
+      "performance": {
+        "rounds_requested": 4,
+        "rounds_ok": 4,
+        "ttft": {
+          "n": 4,
+          "label": "TTFT (s)",
+          "median": 0.4,
+          "mean": 0.63,
+          "min": 0.15,
+          "max": 1.6,
+          "stdev": 0.66,
+          "p95": null,
+          "p95_note": "n=4 é pouco para percentil; precisa de 20+"
+        },
+        "gen_rate": {
+          "n": 4,
+          "label": "geração (tok/s)",
+          "median": 36.74,
+          "mean": 33.51,
+          "min": 21.54,
+          "max": 39.0,
+          "stdev": 8.09,
+          "p95": null,
+          "p95_note": "n=4 é pouco para percentil; precisa de 20+"
+        },
+        "prefill_rate": {
+          "n": 4,
+          "label": "prefill (tok/s)",
+          "median": 24.88,
+          "mean": 25.25,
+          "min": 20.14,
+          "max": 31.09,
+          "stdev": 5.38,
+          "p95": null,
+          "p95_note": "n=4 é pouco para percentil; precisa de 20+"
+        },
+        "hardware": {
+          "samples": 52,
+          "peak_vram_gb": 6.93,
+          "avg_gpu_util": 26.1,
+          "avg_power_w": 65.5,
+          "peak_ram_used_gb": 3.58,
+          "min_ram_avail_gb": 11.83,
+          "peak_swap_used_gb": 2.98
+        },
+        "metrics_sources": [
+          "server"
+        ],
+        "metrics_trustworthy": true,
+        "rounds": [
+          {
+            "ok": true,
+            "reasoning_chars": 0,
+            "prompt_tokens": 32,
+            "gen_tokens": 353,
+            "prefill_rate": 21.261144660163858,
+            "gen_rate": 21.54142504520801,
+            "metrics_source": "server",
+            "ttft": 1.596595048904419,
+            "total_time": 17.983760833740234,
+            "finish_reason": "stop",
+            "truncated": false,
+            "error": null,
+            "tool_calls": [],
+            "content_chars": 1101,
+            "reasoning_share": 0.0
+          },
+          {
+            "ok": true,
+            "reasoning_chars": 0,
+            "prompt_tokens": 4,
+            "gen_tokens": 362,
+            "prefill_rate": 20.138756029040085,
+            "gen_rate": 35.740004695565254,
+            "metrics_source": "server",
+            "ttft": 0.47180795669555664,
+            "total_time": 10.6010160446167,
+            "finish_reason": "stop",
+            "truncated": false,
+            "error": null,
+            "tool_calls": [],
+            "content_chars": 1139,
+            "reasoning_share": 0.0
+          },
+          {
+            "ok": true,
+            "reasoning_chars": 0,
+            "prompt_tokens": 4,
+            "gen_tokens": 353,
+            "prefill_rate": 28.49429045654977,
+            "gen_rate": 38.99534729167924,
+            "metrics_source": "server",
+            "ttft": 0.32426905632019043,
+            "total_time": 9.37765622138977,
+            "finish_reason": "stop",
+            "truncated": false,
+            "error": null,
+            "tool_calls": [],
+            "content_chars": 1101,
+            "reasoning_share": 0.0
+          },
+          {
+            "ok": true,
+            "reasoning_chars": 0,
+            "prompt_tokens": 4,
+            "gen_tokens": 412,
+            "prefill_rate": 31.09380222787093,
+            "gen_rate": 37.74889417271603,
+            "metrics_source": "server",
+            "ttft": 0.1458439826965332,
+            "total_time": 11.058468103408813,
+            "finish_reason": "stop",
+            "truncated": false,
+            "error": null,
+            "tool_calls": [],
+            "content_chars": 1223,
+            "reasoning_share": 0.0
+          }
+        ],
+        "tokens_per_watt": 0.561
+      },
+      "quality": {
+        "tasks": {
+          "bugfix_roman": {
+            "axis": "bugfix",
+            "attempts": 1,
+            "passes": 1,
+            "pass_rate": 1.0,
+            "pass_at_1": true,
+            "pass_at_k": true,
+            "runs": [
+              {
+                "attempt": 1,
+                "passed": true,
+                "reason": "todos os testes passaram",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.0,
+                "gen_tokens": 175,
+                "total_time": 7.1
+              }
+            ]
+          },
+          "bugfix_merge": {
+            "axis": "bugfix",
+            "attempts": 1,
+            "passes": 1,
+            "pass_rate": 1.0,
+            "pass_at_1": true,
+            "pass_at_k": true,
+            "runs": [
+              {
+                "attempt": 1,
+                "passed": true,
+                "reason": "todos os testes passaram",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.0,
+                "gen_tokens": 145,
+                "total_time": 5.3
+              }
+            ]
+          },
+          "patch_format": {
+            "axis": "patch_format",
+            "attempts": 1,
+            "passes": 1,
+            "pass_rate": 1.0,
+            "pass_at_1": true,
+            "pass_at_k": true,
+            "runs": [
+              {
+                "attempt": 1,
+                "passed": true,
+                "reason": "1 bloco(s) aplicaram e `size` funciona",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.0,
+                "gen_tokens": 45,
+                "total_time": 2.4
+              }
+            ]
+          },
+          "tool_call": {
+            "axis": "tool_call",
+            "attempts": 1,
+            "passes": 1,
+            "pass_rate": 1.0,
+            "pass_at_1": true,
+            "pass_at_k": true,
+            "runs": [
+              {
+                "attempt": 1,
+                "passed": true,
+                "reason": "tool call válida: run_sql(SELECT COUNT(*) AS total_pedidos FROM pedidos WHERE data_cri...)",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "tool_calls",
+                "reasoning_share": 0.0,
+                "gen_tokens": 56,
+                "total_time": 3.7
+              }
+            ]
+          },
+          "long_context": {
+            "axis": "long_context",
+            "attempts": 1,
+            "passes": 1,
+            "pass_rate": 1.0,
+            "pass_at_1": true,
+            "pass_at_k": true,
+            "runs": [
+              {
+                "attempt": 1,
+                "passed": true,
+                "reason": "achou o valor 47300",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.0,
+                "gen_tokens": 6,
+                "total_time": 21.4
+              }
+            ]
+          },
+          "instruction_json": {
+            "axis": "instruction",
+            "attempts": 1,
+            "passes": 1,
+            "pass_rate": 1.0,
+            "pass_at_1": true,
+            "pass_at_k": true,
+            "runs": [
+              {
+                "attempt": 1,
+                "passed": true,
+                "reason": "JSON puro e schema completo",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.0,
+                "gen_tokens": 40,
+                "total_time": 2.1
+              }
+            ]
+          }
+        },
+        "by_axis": {
+          "bugfix": {
+            "tasks": 2,
+            "pass_rate": 1.0,
+            "all_passed_once": true
+          },
+          "patch_format": {
+            "tasks": 1,
+            "pass_rate": 1.0,
+            "all_passed_once": true
+          },
+          "tool_call": {
+            "tasks": 1,
+            "pass_rate": 1.0,
+            "all_passed_once": true
+          },
+          "long_context": {
+            "tasks": 1,
+            "pass_rate": 1.0,
+            "all_passed_once": true
+          },
+          "instruction": {
+            "tasks": 1,
+            "pass_rate": 1.0,
+            "all_passed_once": true
+          }
+        },
+        "truncated_runs": 0,
+        "artifacts": "benchmark-report/responses/moe"
+      }
+    }
+  ],
+  "finished_at": "2026-08-03T21:35:53+00:00"
+}

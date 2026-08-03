@@ -184,13 +184,21 @@ def main():
         
     # 2. Qwen3.6-27B
     qwen27b_dir = os.path.join(PROJECT_ROOT, "examples", "landing-page-qwen3.6-27b")
-    print("\n[2/4] Garantindo download e testando Qwen3.6-27B...")
+    print("\n[2/5] Garantindo download e testando Qwen3.6-27B...")
     run_ssh("~/local-llm-lab/linux/llm-server.sh pull qwen27b", timeout=7200)
     if start_profile("qwen27b", ctx=16384):
         run_benchmark_test("qwen27b")
         generate_landing_page("qwen27b", qwen27b_dir)
 
-    # 3. DeepSeek-Coder-V2-Lite
+    # 3. Bonsai-27B (Prism ML)
+    bonsai_dir = os.path.join(PROJECT_ROOT, "examples", "landing-page-bonsai-27b")
+    print("\n[3/5] Garantindo download e testando Bonsai-27B (Prism ML)...")
+    run_ssh("~/local-llm-lab/linux/llm-server.sh pull bonsai", timeout=7200)
+    if start_profile("bonsai", ctx=16384):
+        run_benchmark_test("bonsai")
+        generate_landing_page("bonsai", bonsai_dir)
+
+    # 4. DeepSeek-Coder-V2-Lite
     ds_dir = os.path.join(PROJECT_ROOT, "examples", "landing-page-deepseek-v2-lite")
     print("\n[3/4] Garantindo download e testando DeepSeek-Coder-V2-Lite...")
     run_ssh("~/local-llm-lab/linux/llm-server.sh pull deepseek", timeout=7200)

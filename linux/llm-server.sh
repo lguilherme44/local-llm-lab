@@ -225,6 +225,7 @@ cmd_start() {
     "--port" "$PORT"
     "-c" "$final_ctx"
     "-ngl" "${LLM_NGL:-$default_ngl}"
+    "-np" "1"
     "--api-key" "$API_KEY"
   )
 

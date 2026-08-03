@@ -83,7 +83,7 @@ get_lan_ip() {
 }
 
 if $LAN; then
-  BIND_HOST="$(get_lan_ip)"
+  BIND_HOST="0.0.0.0"
 elif [[ -n "${LLM_HOST:-}" ]]; then
   BIND_HOST="$LLM_HOST"
 else
@@ -259,11 +259,13 @@ cmd_start() {
   echo "$pid" > "$PID_FILE"
   echo "$prof_name" > "$PROF_FILE"
 
-  echo -n "Aguardando o servidor subir (health check em http://$PROBE_HOST:$PORT/health)... "
+  echo -n "Aguardando o modelo carregar na VRAM/RAM (health check em http://$PROBE_HOST:$PORT/health)... "
   local attempts=0
-  while [[ $attempts -lt 30 ]]; do
+  while [[ $attempts -lt 60 ]]; do
     if kill -0 "$pid" 2>/dev/null; then
-      if curl -s -f -h "Authorization: Bearer $API_KEY" "http://$PROBE_HOST:$PORT/health" &>/dev/null; then
+      local code
+      code=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $API_KEY" "http://$PROBE_HOST:$PORT/health" 2>/dev/null || echo "000")
+      if [[ "$code" == "200" ]]; then
         echo "${GRN}ONLINE!${R}"
         echo "${GRN}✓ llm-server pronto no perfil '$prof_name' (PID: $pid)${R}"
         return 0
@@ -275,7 +277,7 @@ cmd_start() {
       rm -f "$PID_FILE"
       exit 1
     fi
-    sleep 1
+    sleep 2
     attempts=$((attempts + 1))
   done
 

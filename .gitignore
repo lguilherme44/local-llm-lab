@@ -31,3 +31,7 @@ resp.json
 #   .atl/  estado do Agent Teams Lite (skill-registry.md)
 .pi/
 .atl/
+
+__pycache__/
+*.pyc
+benchmark-report/responses/

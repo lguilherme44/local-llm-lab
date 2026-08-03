@@ -111,7 +111,7 @@ agent|Qwen/Qwen3-8B-GGUF|Q4_K_M|5.03|16384|6.24|0.5|0|sim||--reasoning off|Qwen3
 fast|Qwen/Qwen2.5-Coder-7B-Instruct-GGUF|Q4_K_M|4.30|16384|5.40|0.5|0|nao|||Qwen2.5 Coder 7B. Especialista em código puro, ~80 tok/s. Não serve como agente.
 moe|unsloth/Qwen3.6-35B-A3B-GGUF|UD-IQ4_NL|16.80|16384|6.17|12.5|36|sim|Qwen3.6-35B-A3B-UD-IQ4_NL.gguf|--reasoning off|Qwen3.6 35B MoE (3B ativos) via Unsloth. 36 camadas de expert na RAM, atencao na VRAM. ~26 tok/s.
 qwen27b|unsloth/Qwen3.6-27B-MTP-GGUF|IQ4_NL|15.22|16384|7.00|10.0|24|sim|Qwen3.6-27B-IQ4_NL.gguf||Qwen3.6 27B em IQ4_NL (15.22 GB). Excelente equilíbrio entre modelo denso e performance.
-deepseek|bartowski/DeepSeek-Coder-V2-Lite-Instruct-GGUF|Q8_0|15.56|16384|8.00|8.0|16|sim|DeepSeek-Coder-V2-Lite-Instruct-Q8_0.gguf||DeepSeek Coder V2 Lite 16B MoE (2.4B ativos) em Q8_0. Máxima precisão para código.
+deepseek|bartowski/DeepSeek-Coder-V2-Lite-Instruct-GGUF|Q4_K_M|9.11|16384|8.00|6.0|16|sim|DeepSeek-Coder-V2-Lite-Instruct-Q4_K_M.gguf||DeepSeek Coder V2 Lite 16B MoE em Q4_K_M. Excelente precisão para código e resposta rápida.
 frontier|unsloth/DeepSeek-V4-Flash-0731-GGUF|UD-IQ1_S|76.87|8192|7.00|15.0|128|sim|DeepSeek-V4-Flash-0731-UD-IQ1_S-00001-of-00003.gguf||DeepSeek V4 Flash Frontier MoE (76.8 GB). Experimento de qualidade máxima via mmap/SSD.
 quality|bartowski/gemma-4-12B-it-GGUF|Q4_K_M|7.30|8192|7.80|1.0|0|sim|||Gemma 4 12B. Aceita imagens e texto. Exige liberar VRAM para rodar liso.
 tiny|Qwen/Qwen2.5-Coder-3B-Instruct-GGUF|Q4_K_M|2.00|16384|2.90|0.3|0|nao|||Qwen2.5 Coder 3B. Leve, ~110 tok/s. Ótimo para autocompletar e testes rápidos.

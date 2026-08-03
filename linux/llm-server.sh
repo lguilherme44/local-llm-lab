@@ -32,6 +32,11 @@ PROF_FILE="$RUN_DIR/current-profile"
 
 mkdir -p "$BIN_DIR" "$MODEL_DIR" "$RUN_DIR"
 
+INHIBIT=""
+if command -v systemd-inhibit &>/dev/null; then
+  INHIBIT="systemd-inhibit --what=idle:sleep:handle-lid-switch --who=llm-server --why=LLM-Server-Running"
+fi
+
 PORT="${LLM_PORT:-8080}"
 DEFAULT_PROFILE="agent"
 API_KEY="local"
@@ -100,6 +105,7 @@ agent|Qwen/Qwen3-8B-GGUF|Q4_K_M|5.03|16384|6.24|0.5|0|sim||--reasoning off|Qwen3
 fast|Qwen/Qwen2.5-Coder-7B-Instruct-GGUF|Q4_K_M|4.30|16384|5.40|0.5|0|nao|||Qwen2.5 Coder 7B. Especialista em código puro, ~80 tok/s. Não serve como agente.
 moe|HauhauCS/Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive|IQ4_NL|18.42|16384|6.17|12.5|36|sim|Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive-IQ4_NL.gguf|--reasoning off|Qwen3.6 35B MoE (3B ativos). 36 camadas de expert na RAM, atencao na VRAM. ~26 tok/s.
 deepseek|bartowski/DeepSeek-Coder-V2-Lite-Instruct-GGUF|Q8_0|15.56|16384|8.00|8.0|16|sim|DeepSeek-Coder-V2-Lite-Instruct-Q8_0.gguf||DeepSeek Coder V2 Lite 16B MoE (2.4B ativos) em Q8_0. Máxima precisão para código.
+frontier|unsloth/DeepSeek-V4-Flash-0731-GGUF|UD-IQ1_S|76.87|8192|7.00|15.0|128|sim|DeepSeek-V4-Flash-0731-UD-IQ1_S-00001-of-00003.gguf||DeepSeek V4 Flash Frontier MoE (76.8 GB). Experimento de qualidade máxima via mmap/SSD.
 quality|bartowski/gemma-4-12B-it-GGUF|Q4_K_M|7.30|8192|7.80|1.0|0|sim|||Gemma 4 12B. Aceita imagens e texto. Exige liberar VRAM para rodar liso.
 tiny|Qwen/Qwen2.5-Coder-3B-Instruct-GGUF|Q4_K_M|2.00|16384|2.90|0.3|0|nao|||Qwen2.5 Coder 3B. Leve, ~110 tok/s. Ótimo para autocompletar e testes rápidos.
 EOF
@@ -230,7 +236,11 @@ cmd_start() {
     ARGS+=("${EXTRA_ARR[@]}")
   fi
 
-  nohup "$LLAMA_SERVER" "${ARGS[@]}" > "$LOG_FILE" 2>&1 &
+  if [[ -n "$INHIBIT" ]]; then
+    nohup $INHIBIT "$LLAMA_SERVER" "${ARGS[@]}" > "$LOG_FILE" 2>&1 &
+  else
+    nohup "$LLAMA_SERVER" "${ARGS[@]}" > "$LOG_FILE" 2>&1 &
+  fi
   local pid=$!
   echo "$pid" > "$PID_FILE"
   echo "$prof_name" > "$PROF_FILE"
@@ -423,12 +433,12 @@ cmd_pull() {
   mkdir -p "$MODEL_DIR"
   if [[ -n "$file" ]]; then
     local model_path="$MODEL_DIR/$file"
-    if [[ -f "$model_path" ]]; then
-      echo "${GRN}✓ Modelo '$prof_name' ($file) já está baixado em $model_path${R}"
-      return 0
+    echo "${B}Baixando/Verificando peso do perfil '$prof_name' ($file_gb GB)...${R}"
+    if [[ -n "$INHIBIT" ]]; then
+      $INHIBIT curl -C - -L "https://huggingface.co/$repo/resolve/main/$file" -o "$model_path"
+    else
+      curl -C - -L "https://huggingface.co/$repo/resolve/main/$file" -o "$model_path"
     fi
-    echo "${B}Baixando peso do perfil '$prof_name' ($file_gb GB)...${R}"
-    curl -C - -L "https://huggingface.co/$repo/resolve/main/$file" -o "$model_path"
     echo "${GRN}✓ Download concluído com sucesso em $model_path!${R}"
   else
     echo "Baixando repositório HF $repo ($quant)..."

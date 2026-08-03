@@ -10,7 +10,7 @@ import sys
 import time
 import json
 import math
-import numpy as np
+import statistics
 import threading
 import subprocess
 import urllib.request
@@ -241,14 +241,22 @@ def run_performance_suite(profile_name: str, monitor: HardwareMonitor, rounds: i
     def calc_stats(arr):
         if not arr:
             return {"avg": 0, "median": 0, "min": 0, "max": 0, "std": 0, "p95": 0}
-        a = np.array(arr)
+        s = sorted(arr)
+        n = len(s)
+        p95_idx = int(math.ceil(0.95 * n)) - 1
+        p95_idx = max(0, min(p95_idx, n - 1))
+        
+        avg_val = sum(s) / n
+        std_val = statistics.stdev(s) if n > 1 else 0.0
+        med_val = statistics.median(s)
+        
         return {
-            "avg": round(float(np.mean(a)), 2),
-            "median": round(float(np.median(a)), 2),
-            "min": round(float(np.min(a)), 2),
-            "max": round(float(np.max(a)), 2),
-            "std": round(float(np.std(a)), 2),
-            "p95": round(float(np.percentile(a, 95)), 2)
+            "avg": round(avg_val, 2),
+            "median": round(med_val, 2),
+            "min": round(s[0], 2),
+            "max": round(s[-1], 2),
+            "std": round(std_val, 2),
+            "p95": round(s[p95_idx], 2)
         }
 
     perf_result = {

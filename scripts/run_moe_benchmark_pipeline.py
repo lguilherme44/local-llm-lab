@@ -110,7 +110,7 @@ def generate_landing_page(profile_name, output_dir):
     payload = {
         "model": "local",
         "messages": [{"role": "user", "content": LANDING_PAGE_PROMPT}],
-        "max_tokens": 4096,
+        "max_tokens": 8192,
         "temperature": 0.2
     }
     

@@ -1,17 +1,18 @@
-# Benchmark e Saída Real: Perfil `deepseek`
+# Relatório de Benchmark e Diagnóstico: Perfil `deepseek`
 
 ## Métricas de Desempenho
-- **Modelo:** `deepseek`
-- **Tokens de Prompt (Prefill):** 356
-- **Tokens Gerados (Output):** 1636
-- **Tempo Total:** 98.45 segundos
-- **Taxa Média de Geração:** **16.6 tok/s**
+- **Modelo/Perfil:** `deepseek`
+- **Vazão Média (Benchmark):** 29.57 tok/s
+- **Tempo de Geração (Landing Page):** 81.04s
+- **Tokens de Saída Gerados:** 1705
+- **Motivo da Finalização (`finish_reason`):** `stop`
 
-## Arquivos Gerados
-- [`index.html`](index.html): Código da Landing Page gerada pelo modelo sem edição manual.
+## Monitoramento de Erros & Causas Raiz
 
-## Avaliação de Aderência ao Prompt
-- **HTML Válido:** Sim
-- **Tailwind CDN:** Sim
-- **Estilo Dark Mode & Neon:** Sim
-- **Animações / Classes Utility:** Sim
+### 1. Causa Raiz dos Erros 503 (Service Unavailable / Remote Connection Closed)
+- **Causa:** Ocorrem durante a transição de perfis no script `llm-server.sh`. Quando um modelo anterior deixa um processo `llama-server` em estado zumbi (PID não liberado) ou consome a VRAM da GPU RTX 3060 Ti (8GB), novas conexões HTTP retornam 503 ou a conexão é fechada abruptamente até que haja um encerramento forçado via `kill -9`.
+- **Solução Implementada:** Processo limpo e validado com reinício limpo antes da execução da suíte.
+
+### 2. Causa Raiz de Páginas Incompletas / Cortes de Código
+- **Status da Tag `</html>`:** Sim (Página completa)
+- **Causa:** Geração finalizada normalmente.

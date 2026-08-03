@@ -1,0 +1,337 @@
+{
+  "started_at": "2026-08-03T22:40:48+00:00",
+  "environment": {
+    "ggml_backends": [
+      "base",
+      "cpu-alderlake",
+      "cpu-cannonlake",
+      "cpu-cascadelake",
+      "cpu-cooperlake",
+      "cpu-haswell",
+      "cpu-icelake",
+      "cpu-ivybridge",
+      "cpu-piledriver",
+      "cpu-sandybridge",
+      "cpu-sapphirerapids",
+      "cpu-skylakex",
+      "cpu",
+      "cpu-sse42",
+      "cpu-x64",
+      "cpu-zen4",
+      "cuda",
+      "rpc",
+      "vulkan"
+    ],
+    "has_cuda": true,
+    "has_vulkan": true,
+    "gpu": "NVIDIA GeForce RTX 3060 Ti, 8192 MiB, 595.84"
+  },
+  "config": {
+    "perf_rounds": 5,
+    "repeats": 3,
+    "skip_perf": true,
+    "label": "sem_reasoning",
+    "reasoning_override": "off"
+  },
+  "results": [
+    {
+      "name": "Qwen 3.6 35B-A3B MoE",
+      "profile": "moe",
+      "ctx": 16384,
+      "status": "ok",
+      "effective_cmdline": "-c 16384 | -ngl 99 | -ctk q8_0 | -fa on | --n-cpu-moe 30",
+      "quality": {
+        "tasks": {
+          "bugfix_roman": {
+            "axis": "bugfix",
+            "attempts": 3,
+            "passes": 3,
+            "pass_rate": 1.0,
+            "pass_at_1": true,
+            "pass_at_k": true,
+            "runs": [
+              {
+                "attempt": 1,
+                "passed": true,
+                "reason": "todos os testes passaram",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.0,
+                "gen_tokens": 175,
+                "total_time": 13.2
+              },
+              {
+                "attempt": 2,
+                "passed": true,
+                "reason": "todos os testes passaram",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.0,
+                "gen_tokens": 175,
+                "total_time": 4.9
+              },
+              {
+                "attempt": 3,
+                "passed": true,
+                "reason": "todos os testes passaram",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.0,
+                "gen_tokens": 175,
+                "total_time": 4.5
+              }
+            ]
+          },
+          "bugfix_merge": {
+            "axis": "bugfix",
+            "attempts": 3,
+            "passes": 3,
+            "pass_rate": 1.0,
+            "pass_at_1": true,
+            "pass_at_k": true,
+            "runs": [
+              {
+                "attempt": 1,
+                "passed": true,
+                "reason": "todos os testes passaram",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.0,
+                "gen_tokens": 149,
+                "total_time": 6.2
+              },
+              {
+                "attempt": 2,
+                "passed": true,
+                "reason": "todos os testes passaram",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.0,
+                "gen_tokens": 149,
+                "total_time": 4.0
+              },
+              {
+                "attempt": 3,
+                "passed": true,
+                "reason": "todos os testes passaram",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.0,
+                "gen_tokens": 144,
+                "total_time": 3.8
+              }
+            ]
+          },
+          "patch_format": {
+            "axis": "patch_format",
+            "attempts": 3,
+            "passes": 3,
+            "pass_rate": 1.0,
+            "pass_at_1": true,
+            "pass_at_k": true,
+            "runs": [
+              {
+                "attempt": 1,
+                "passed": true,
+                "reason": "1 bloco(s) aplicaram e `size` funciona",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.0,
+                "gen_tokens": 45,
+                "total_time": 2.5
+              },
+              {
+                "attempt": 2,
+                "passed": true,
+                "reason": "1 bloco(s) aplicaram e `size` funciona",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.0,
+                "gen_tokens": 45,
+                "total_time": 1.2
+              },
+              {
+                "attempt": 3,
+                "passed": true,
+                "reason": "1 bloco(s) aplicaram e `size` funciona",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.0,
+                "gen_tokens": 45,
+                "total_time": 1.2
+              }
+            ]
+          },
+          "tool_call": {
+            "axis": "tool_call",
+            "attempts": 3,
+            "passes": 3,
+            "pass_rate": 1.0,
+            "pass_at_1": true,
+            "pass_at_k": true,
+            "runs": [
+              {
+                "attempt": 1,
+                "passed": true,
+                "reason": "tool call válida: run_sql(SELECT COUNT(*) AS total_pedidos FROM pedidos WHERE data_cri...)",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "tool_calls",
+                "reasoning_share": 0.0,
+                "gen_tokens": 56,
+                "total_time": 3.5
+              },
+              {
+                "attempt": 2,
+                "passed": true,
+                "reason": "tool call válida: run_sql(SELECT COUNT(*) AS total_pedidos FROM pedidos WHERE data_cri...)",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "tool_calls",
+                "reasoning_share": 0.0,
+                "gen_tokens": 56,
+                "total_time": 1.5
+              },
+              {
+                "attempt": 3,
+                "passed": true,
+                "reason": "tool call válida: run_sql(SELECT COUNT(*) FROM pedidos WHERE data_criacao >= CURRENT_D...)",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "tool_calls",
+                "reasoning_share": 0.0,
+                "gen_tokens": 52,
+                "total_time": 1.4
+              }
+            ]
+          },
+          "long_context": {
+            "axis": "long_context",
+            "attempts": 3,
+            "passes": 3,
+            "pass_rate": 1.0,
+            "pass_at_1": true,
+            "pass_at_k": true,
+            "runs": [
+              {
+                "attempt": 1,
+                "passed": true,
+                "reason": "achou o valor 47300",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.0,
+                "gen_tokens": 6,
+                "total_time": 21.0
+              },
+              {
+                "attempt": 2,
+                "passed": true,
+                "reason": "achou o valor 47300",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.0,
+                "gen_tokens": 6,
+                "total_time": 0.4
+              },
+              {
+                "attempt": 3,
+                "passed": true,
+                "reason": "achou o valor 47300",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.0,
+                "gen_tokens": 6,
+                "total_time": 0.4
+              }
+            ]
+          },
+          "instruction_json": {
+            "axis": "instruction",
+            "attempts": 3,
+            "passes": 3,
+            "pass_rate": 1.0,
+            "pass_at_1": true,
+            "pass_at_k": true,
+            "runs": [
+              {
+                "attempt": 1,
+                "passed": true,
+                "reason": "JSON puro e schema completo",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.0,
+                "gen_tokens": 40,
+                "total_time": 2.4
+              },
+              {
+                "attempt": 2,
+                "passed": true,
+                "reason": "JSON puro e schema completo",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.0,
+                "gen_tokens": 40,
+                "total_time": 1.2
+              },
+              {
+                "attempt": 3,
+                "passed": true,
+                "reason": "JSON puro e schema completo",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.0,
+                "gen_tokens": 40,
+                "total_time": 1.1
+              }
+            ]
+          }
+        },
+        "by_axis": {
+          "bugfix": {
+            "tasks": 2,
+            "pass_rate": 1.0,
+            "all_passed_once": true
+          },
+          "patch_format": {
+            "tasks": 1,
+            "pass_rate": 1.0,
+            "all_passed_once": true
+          },
+          "tool_call": {
+            "tasks": 1,
+            "pass_rate": 1.0,
+            "all_passed_once": true
+          },
+          "long_context": {
+            "tasks": 1,
+            "pass_rate": 1.0,
+            "all_passed_once": true
+          },
+          "instruction": {
+            "tasks": 1,
+            "pass_rate": 1.0,
+            "all_passed_once": true
+          }
+        },
+        "truncated_runs": 0,
+        "artifacts": "benchmark-report/responses/moe_sem_reasoning"
+      }
+    }
+  ],
+  "finished_at": "2026-08-03T22:42:18+00:00"
+}

@@ -1,0 +1,337 @@
+{
+  "started_at": "2026-08-03T22:42:23+00:00",
+  "environment": {
+    "ggml_backends": [
+      "base",
+      "cpu-alderlake",
+      "cpu-cannonlake",
+      "cpu-cascadelake",
+      "cpu-cooperlake",
+      "cpu-haswell",
+      "cpu-icelake",
+      "cpu-ivybridge",
+      "cpu-piledriver",
+      "cpu-sandybridge",
+      "cpu-sapphirerapids",
+      "cpu-skylakex",
+      "cpu",
+      "cpu-sse42",
+      "cpu-x64",
+      "cpu-zen4",
+      "cuda",
+      "rpc",
+      "vulkan"
+    ],
+    "has_cuda": true,
+    "has_vulkan": true,
+    "gpu": "NVIDIA GeForce RTX 3060 Ti, 8192 MiB, 595.84"
+  },
+  "config": {
+    "perf_rounds": 5,
+    "repeats": 3,
+    "skip_perf": true,
+    "label": "com_reasoning",
+    "reasoning_override": "on"
+  },
+  "results": [
+    {
+      "name": "Qwen 3.6 35B-A3B MoE",
+      "profile": "moe",
+      "ctx": 16384,
+      "status": "ok",
+      "effective_cmdline": "-c 16384 | -ngl 99 | -ctk q8_0 | -fa on | --n-cpu-moe 30",
+      "quality": {
+        "tasks": {
+          "bugfix_roman": {
+            "axis": "bugfix",
+            "attempts": 3,
+            "passes": 3,
+            "pass_rate": 1.0,
+            "pass_at_1": true,
+            "pass_at_k": true,
+            "runs": [
+              {
+                "attempt": 1,
+                "passed": true,
+                "reason": "todos os testes passaram",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.683,
+                "gen_tokens": 450,
+                "total_time": 24.9
+              },
+              {
+                "attempt": 2,
+                "passed": true,
+                "reason": "todos os testes passaram",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.889,
+                "gen_tokens": 1147,
+                "total_time": 31.0
+              },
+              {
+                "attempt": 3,
+                "passed": true,
+                "reason": "todos os testes passaram",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.894,
+                "gen_tokens": 1196,
+                "total_time": 31.1
+              }
+            ]
+          },
+          "bugfix_merge": {
+            "axis": "bugfix",
+            "attempts": 3,
+            "passes": 0,
+            "pass_rate": 0.0,
+            "pass_at_1": false,
+            "pass_at_k": false,
+            "runs": [
+              {
+                "attempt": 1,
+                "passed": false,
+                "reason": "resposta não contém `def merge_intervals`",
+                "detail": "",
+                "truncated": true,
+                "finish_reason": "length",
+                "reasoning_share": 1.0,
+                "gen_tokens": 3072,
+                "total_time": 79.6
+              },
+              {
+                "attempt": 2,
+                "passed": false,
+                "reason": "resposta não contém `def merge_intervals`",
+                "detail": "",
+                "truncated": true,
+                "finish_reason": "length",
+                "reasoning_share": 1.0,
+                "gen_tokens": 3072,
+                "total_time": 78.3
+              },
+              {
+                "attempt": 3,
+                "passed": false,
+                "reason": "resposta não contém `def merge_intervals`",
+                "detail": "",
+                "truncated": true,
+                "finish_reason": "length",
+                "reasoning_share": 1.0,
+                "gen_tokens": 3072,
+                "total_time": 78.2
+              }
+            ]
+          },
+          "patch_format": {
+            "axis": "patch_format",
+            "attempts": 3,
+            "passes": 1,
+            "pass_rate": 0.333,
+            "pass_at_1": false,
+            "pass_at_k": true,
+            "runs": [
+              {
+                "attempt": 1,
+                "passed": false,
+                "reason": "nenhum bloco SEARCH/REPLACE bem-formado encontrado",
+                "detail": "",
+                "truncated": true,
+                "finish_reason": "length",
+                "reasoning_share": 1.0,
+                "gen_tokens": 2048,
+                "total_time": 53.2
+              },
+              {
+                "attempt": 2,
+                "passed": true,
+                "reason": "1 bloco(s) aplicaram e `size` funciona",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.958,
+                "gen_tokens": 1108,
+                "total_time": 29.4
+              },
+              {
+                "attempt": 3,
+                "passed": false,
+                "reason": "nenhum bloco SEARCH/REPLACE bem-formado encontrado",
+                "detail": "",
+                "truncated": true,
+                "finish_reason": "length",
+                "reasoning_share": 1.0,
+                "gen_tokens": 2048,
+                "total_time": 54.2
+              }
+            ]
+          },
+          "tool_call": {
+            "axis": "tool_call",
+            "attempts": 3,
+            "passes": 0,
+            "pass_rate": 0.0,
+            "pass_at_1": false,
+            "pass_at_k": false,
+            "runs": [
+              {
+                "attempt": 1,
+                "passed": false,
+                "reason": "campo tool_calls vazio ou ausente",
+                "detail": "",
+                "truncated": true,
+                "finish_reason": "length",
+                "reasoning_share": 1.0,
+                "gen_tokens": 1024,
+                "total_time": 29.8
+              },
+              {
+                "attempt": 2,
+                "passed": false,
+                "reason": "campo tool_calls vazio ou ausente",
+                "detail": "",
+                "truncated": true,
+                "finish_reason": "length",
+                "reasoning_share": 1.0,
+                "gen_tokens": 1024,
+                "total_time": 27.2
+              },
+              {
+                "attempt": 3,
+                "passed": false,
+                "reason": "campo tool_calls vazio ou ausente",
+                "detail": "",
+                "truncated": true,
+                "finish_reason": "length",
+                "reasoning_share": 1.0,
+                "gen_tokens": 1024,
+                "total_time": 27.1
+              }
+            ]
+          },
+          "long_context": {
+            "axis": "long_context",
+            "attempts": 3,
+            "passes": 3,
+            "pass_rate": 1.0,
+            "pass_at_1": true,
+            "pass_at_k": true,
+            "runs": [
+              {
+                "attempt": 1,
+                "passed": true,
+                "reason": "achou o valor 47300",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.992,
+                "gen_tokens": 194,
+                "total_time": 31.2
+              },
+              {
+                "attempt": 2,
+                "passed": true,
+                "reason": "achou o valor 47300",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.991,
+                "gen_tokens": 174,
+                "total_time": 5.0
+              },
+              {
+                "attempt": 3,
+                "passed": true,
+                "reason": "achou o valor 47300",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.992,
+                "gen_tokens": 188,
+                "total_time": 5.3
+              }
+            ]
+          },
+          "instruction_json": {
+            "axis": "instruction",
+            "attempts": 3,
+            "passes": 2,
+            "pass_rate": 0.667,
+            "pass_at_1": false,
+            "pass_at_k": true,
+            "runs": [
+              {
+                "attempt": 1,
+                "passed": false,
+                "reason": "não foi possível extrair JSON",
+                "detail": "",
+                "truncated": true,
+                "finish_reason": "length",
+                "reasoning_share": 1.0,
+                "gen_tokens": 1024,
+                "total_time": 30.8
+              },
+              {
+                "attempt": 2,
+                "passed": true,
+                "reason": "JSON puro e schema completo",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.954,
+                "gen_tokens": 509,
+                "total_time": 15.1
+              },
+              {
+                "attempt": 3,
+                "passed": true,
+                "reason": "JSON puro e schema completo",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.951,
+                "gen_tokens": 483,
+                "total_time": 13.1
+              }
+            ]
+          }
+        },
+        "by_axis": {
+          "bugfix": {
+            "tasks": 2,
+            "pass_rate": 0.5,
+            "all_passed_once": false
+          },
+          "patch_format": {
+            "tasks": 1,
+            "pass_rate": 0.333,
+            "all_passed_once": true
+          },
+          "tool_call": {
+            "tasks": 1,
+            "pass_rate": 0.0,
+            "all_passed_once": false
+          },
+          "long_context": {
+            "tasks": 1,
+            "pass_rate": 1.0,
+            "all_passed_once": true
+          },
+          "instruction": {
+            "tasks": 1,
+            "pass_rate": 0.667,
+            "all_passed_once": true
+          }
+        },
+        "truncated_runs": 9,
+        "artifacts": "benchmark-report/responses/moe_com_reasoning"
+      }
+    }
+  ],
+  "finished_at": "2026-08-03T22:53:22+00:00"
+}

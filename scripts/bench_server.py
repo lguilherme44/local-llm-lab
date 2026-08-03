@@ -77,10 +77,16 @@ class RemoteServer:
         self.ssh_checked(f"{self.remote_script} pull {profile}", timeout=timeout)
 
     def start_profile(self, profile: str, ctx: int,
-                      timeout: int = 900) -> None:
+                      timeout: int = 900,
+                      env: Optional[dict] = None) -> None:
         print(f"  🚀 Carregando perfil '{profile}' (ctx {ctx})...")
+        # env permite variar LLM_REASONING / LLM_NGL / LLM_CPU_MOE entre rodadas
+        # sem editar a tabela de perfis — comparacao A/B no mesmo modelo.
+        prefix = f"LLM_CTX={ctx}"
+        for key, value in (env or {}).items():
+            prefix += f" {key}={value}"
         out, err, code = self.ssh(
-            f"LLM_CTX={ctx} {self.remote_script} restart {profile} --lan",
+            f"{prefix} {self.remote_script} restart {profile} --lan",
             timeout=timeout,
         )
         if code != 0:

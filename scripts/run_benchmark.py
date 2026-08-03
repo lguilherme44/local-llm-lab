@@ -179,7 +179,7 @@ def run_performance(client: InferenceClient, monitor: RemoteHardwareMonitor,
 # ─── suíte de qualidade ─────────────────────────────────────────────────────────
 
 def run_quality(client: InferenceClient, repeats: int,
-                artifact_dir: Path) -> Dict[str, Any]:
+                artifact_dir: Path, mt_scale: float = 1.0) -> Dict[str, Any]:
     print(f"\n  🎯 Qualidade — {len(tasks.ALL_TASKS)} tarefas × {repeats} "
           f"repetição(ões)")
     artifact_dir.mkdir(parents=True, exist_ok=True)
@@ -191,7 +191,8 @@ def run_quality(client: InferenceClient, repeats: int,
         print(f"     • {task.key} ({task.axis})")
 
         for attempt in range(1, repeats + 1):
-            res = client.generate(task.prompt, max_tokens=task.max_tokens,
+            budget = int(task.max_tokens * mt_scale)
+            res = client.generate(task.prompt, max_tokens=budget,
                                   extra_body=task.extra_body or None)
 
             if not res.ok:
@@ -221,6 +222,7 @@ def run_quality(client: InferenceClient, repeats: int,
                     res.reasoning_chars / (res.reasoning_chars + len(res.content)), 3
                 ) if (res.reasoning_chars + len(res.content)) else 0.0,
                 "gen_tokens": res.gen_tokens,
+                "max_tokens": budget,
                 "total_time": round(res.total_time, 1),
             })
 
@@ -277,10 +279,11 @@ def run_quality(client: InferenceClient, repeats: int,
 
 # ─── relatório ──────────────────────────────────────────────────────────────────
 
-def write_reports(payload: Dict[str, Any]) -> None:
+def write_reports(payload: Dict[str, Any], label: str = "") -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    suffix = f"_{label}" if label else ""
 
-    json_path = OUTPUT_DIR / "benchmark_summary.json"
+    json_path = OUTPUT_DIR / f"benchmark_summary{suffix}.json"
     json_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False),
                          encoding="utf-8")
     print(f"\n💾 JSON: {json_path.relative_to(PROJECT_ROOT)}")
@@ -370,7 +373,7 @@ def write_reports(payload: Dict[str, Any]) -> None:
               "`max_tokens` está curto para o gasto de reasoning do modelo.",
               ""]
 
-    md_path = OUTPUT_DIR / "BENCHMARK.md"
+    md_path = OUTPUT_DIR / f"BENCHMARK{suffix}.md"
     md_path.write_text("\n".join(lines), encoding="utf-8")
     print(f"📄 Markdown: {md_path.relative_to(PROJECT_ROOT)}")
 
@@ -386,6 +389,15 @@ def main() -> int:
                     help="repetições por tarefa de qualidade (pass@k)")
     ap.add_argument("--skip-perf", action="store_true")
     ap.add_argument("--skip-pull", action="store_true")
+    ap.add_argument("--label", default="",
+                    help="sufixo nos arquivos de saida, para comparar rodadas")
+    ap.add_argument("--reasoning", choices=["on", "off"], default=None,
+                    help="forca reasoning ligado/desligado no perfil")
+    ap.add_argument("--max-tokens-scale", type=float, default=1.0,
+                    help="multiplica o max_tokens de cada tarefa. Necessario "
+                         "para comparar com reasoning: no orcamento base o "
+                         "modelo gasta 100%% da cota pensando e o grader mede "
+                         "o orcamento, nao o modelo")
     args = ap.parse_args()
 
     selected = PROFILES
@@ -415,7 +427,10 @@ def main() -> int:
         "started_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "environment": env,
         "config": {"perf_rounds": args.perf_rounds, "repeats": args.repeats,
-                   "skip_perf": args.skip_perf},
+                   "skip_perf": args.skip_perf,
+                   "label": args.label,
+                   "reasoning_override": args.reasoning,
+                   "max_tokens_scale": args.max_tokens_scale},
         "results": [],
     }
 
@@ -431,7 +446,10 @@ def main() -> int:
         try:
             if not args.skip_pull:
                 server.pull(profile)
-            server.start_profile(profile, ctx=spec["ctx"])
+            env = {}
+            if args.reasoning:
+                env["LLM_REASONING"] = args.reasoning
+            server.start_profile(profile, ctx=spec["ctx"], env=env)
             entry["effective_cmdline"] = server.effective_config()
 
             client = InferenceClient(SERVER_URL, idle_timeout=240.0,
@@ -443,7 +461,8 @@ def main() -> int:
 
             entry["quality"] = run_quality(
                 client, args.repeats,
-                OUTPUT_DIR / "responses" / profile)
+                OUTPUT_DIR / "responses" / f"{profile}{'_' + args.label if args.label else ''}",
+                mt_scale=args.max_tokens_scale)
 
         except ServerError as exc:
             entry["status"] = "erro_de_servidor"
@@ -464,7 +483,7 @@ def main() -> int:
         payload["results"].append(entry)
 
     payload["finished_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    write_reports(payload)
+    write_reports(payload, args.label)
 
     ok = sum(1 for r in payload["results"] if r["status"] == "ok")
     print(f"\n{'=' * 62}")

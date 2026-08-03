@@ -140,6 +140,16 @@ o relatório antigo dizia "Issues: None detected" — porque o pipeline não reg
 
 ## Três coisas que mudaram todas as decisões
 
+**0. Reasoning ligado piora tudo neste modelo, e fica com `off`.**
+A/B medido, três braços: 18/18 sem reasoning, 8/18 com no orçamento normal, 9/12 com 4×
+de orçamento. Custa 7 a 20× mais tokens, e no `patch_format` degenera em loop — 819 linhas
+de raciocínio re-copiando o mesmo trecho (`def clear(self):` quarenta e duas vezes) para
+adicionar um método de duas linhas que sem reasoning sai em 45 tokens.
+
+Cuidado com a leitura, porém: o baseline acerta tudo, então o experimento só conseguia
+mostrar empate ou piora. Ele não responde se reasoning ajudaria em tarefa difícil.
+Reproduza com `--reasoning on|off --label X`.
+
 **1. Tokens de reasoning gastam a cota e são invisíveis.**
 Qwen3.6 emite o pensamento em `delta.reasoning_content`, não em `delta.content`.
 Consome `max_tokens` igual. Medido: para o prompt "Diga apenas: ok" com
@@ -303,9 +313,10 @@ Na ordem:
   investigado.
 - Existe ~2,9 GB de swap ocupado de forma persistente durante o MoE, sem thrashing. Não
   sei se é resíduo ou custo real de 12,5 GB de experts em 16 GB de RAM.
-- A decisão sobre `--reasoning off` está aberta. Desligar acelera e evita truncagem,
-  mas raciocínio geralmente melhora o resultado, e qualidade é o objetivo aqui. Só
-  medindo os dois modos no mesmo modelo dá para decidir.
+- **A suíte é fácil demais.** O `moe` acerta 18/18, que é teto — não dá para medir se uma
+  mudança melhora, só se piora. Faltam tarefas onde ele também erre: bug com causa
+  não-local, refactor que exige preservar invariante, caso onde a resposta óbvia está
+  errada. É a próxima coisa a fazer (`TODO.md` 3.11).
 
 Em outro hardware os números mudam. O método não: medir antes de afirmar, e registrar
 quando a medição derruba a hipótese.

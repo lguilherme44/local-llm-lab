@@ -495,7 +495,21 @@ cmd_start() {
     echo "${DIM}experts na RAM: primeiras $final_cpu_moe camadas (ajuste com LLM_CPU_MOE)${R}"
   fi
 
-  if [[ -n "$extra_args" ]]; then
+  # LLM_REASONING=on|off sobrepõe o `--reasoning` do perfil, para comparar os
+  # dois modos no MESMO modelo sem editar a tabela. Sem isso a comparacao exige
+  # mexer no perfil entre as rodadas, o que convida a erro.
+  case "${LLM_REASONING:-}" in
+    on)
+      extra_args="${extra_args//--reasoning off/}"
+      echo "${DIM}reasoning: LIGADO (sobreposto via LLM_REASONING)${R}"
+      ;;
+    off)
+      extra_args="${extra_args//--reasoning off/} --reasoning off"
+      echo "${DIM}reasoning: DESLIGADO (sobreposto via LLM_REASONING)${R}"
+      ;;
+  esac
+
+  if [[ -n "${extra_args// /}" ]]; then
     read -r -a EXTRA_ARR <<< "$extra_args"
     ARGS+=("${EXTRA_ARR[@]}")
   fi

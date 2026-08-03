@@ -1,0 +1,284 @@
+{
+  "started_at": "2026-08-03T22:54:06+00:00",
+  "environment": {
+    "ggml_backends": [
+      "base",
+      "cpu-alderlake",
+      "cpu-cannonlake",
+      "cpu-cascadelake",
+      "cpu-cooperlake",
+      "cpu-haswell",
+      "cpu-icelake",
+      "cpu-ivybridge",
+      "cpu-piledriver",
+      "cpu-sandybridge",
+      "cpu-sapphirerapids",
+      "cpu-skylakex",
+      "cpu",
+      "cpu-sse42",
+      "cpu-x64",
+      "cpu-zen4",
+      "cuda",
+      "rpc",
+      "vulkan"
+    ],
+    "has_cuda": true,
+    "has_vulkan": true,
+    "gpu": "NVIDIA GeForce RTX 3060 Ti, 8192 MiB, 595.84"
+  },
+  "config": {
+    "perf_rounds": 5,
+    "repeats": 2,
+    "skip_perf": true,
+    "label": "com_reasoning_4x",
+    "reasoning_override": "on",
+    "max_tokens_scale": 4.0
+  },
+  "results": [
+    {
+      "name": "Qwen 3.6 35B-A3B MoE",
+      "profile": "moe",
+      "ctx": 16384,
+      "status": "ok",
+      "effective_cmdline": "-c 16384 | -ngl 99 | -ctk q8_0 | -fa on | --n-cpu-moe 30",
+      "quality": {
+        "tasks": {
+          "bugfix_roman": {
+            "axis": "bugfix",
+            "attempts": 2,
+            "passes": 2,
+            "pass_rate": 1.0,
+            "pass_at_1": true,
+            "pass_at_k": true,
+            "runs": [
+              {
+                "attempt": 1,
+                "passed": true,
+                "reason": "todos os testes passaram",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.896,
+                "gen_tokens": 1158,
+                "max_tokens": 12288,
+                "total_time": 41.5
+              },
+              {
+                "attempt": 2,
+                "passed": true,
+                "reason": "todos os testes passaram",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.783,
+                "gen_tokens": 664,
+                "max_tokens": 12288,
+                "total_time": 17.4
+              }
+            ]
+          },
+          "bugfix_merge": {
+            "axis": "bugfix",
+            "attempts": 2,
+            "passes": 1,
+            "pass_rate": 0.5,
+            "pass_at_1": true,
+            "pass_at_k": true,
+            "runs": [
+              {
+                "attempt": 1,
+                "passed": true,
+                "reason": "todos os testes passaram",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.887,
+                "gen_tokens": 1452,
+                "max_tokens": 12288,
+                "total_time": 38.4
+              },
+              {
+                "attempt": 2,
+                "passed": false,
+                "reason": "resposta não contém `def merge_intervals`",
+                "detail": "",
+                "truncated": true,
+                "finish_reason": "length",
+                "reasoning_share": 1.0,
+                "gen_tokens": 12288,
+                "max_tokens": 12288,
+                "total_time": 321.4
+              }
+            ]
+          },
+          "patch_format": {
+            "axis": "patch_format",
+            "attempts": 2,
+            "passes": 0,
+            "pass_rate": 0.0,
+            "pass_at_1": false,
+            "pass_at_k": false,
+            "runs": [
+              {
+                "attempt": 1,
+                "passed": false,
+                "reason": "nenhum bloco SEARCH/REPLACE bem-formado encontrado",
+                "detail": "",
+                "truncated": true,
+                "finish_reason": "length",
+                "reasoning_share": 1.0,
+                "gen_tokens": 8192,
+                "max_tokens": 8192,
+                "total_time": 214.1
+              },
+              {
+                "attempt": 2,
+                "passed": false,
+                "reason": "nenhum bloco SEARCH/REPLACE bem-formado encontrado",
+                "detail": "",
+                "truncated": true,
+                "finish_reason": "length",
+                "reasoning_share": 1.0,
+                "gen_tokens": 8192,
+                "max_tokens": 8192,
+                "total_time": 214.7
+              }
+            ]
+          },
+          "tool_call": {
+            "axis": "tool_call",
+            "attempts": 2,
+            "passes": 2,
+            "pass_rate": 1.0,
+            "pass_at_1": true,
+            "pass_at_k": true,
+            "runs": [
+              {
+                "attempt": 1,
+                "passed": true,
+                "reason": "tool call válida: run_sql(SELECT COUNT(*) FROM orders WHERE created_at >= CURRENT_DATE...)",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "tool_calls",
+                "reasoning_share": 1.0,
+                "gen_tokens": 1374,
+                "max_tokens": 4096,
+                "total_time": 38.3
+              },
+              {
+                "attempt": 2,
+                "passed": true,
+                "reason": "tool call válida: run_sql(SELECT COUNT(*) AS total_pedidos_ontem FROM pedidos WHERE DA...)",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "tool_calls",
+                "reasoning_share": 1.0,
+                "gen_tokens": 2189,
+                "max_tokens": 4096,
+                "total_time": 57.4
+              }
+            ]
+          },
+          "long_context": {
+            "axis": "long_context",
+            "attempts": 2,
+            "passes": 2,
+            "pass_rate": 1.0,
+            "pass_at_1": true,
+            "pass_at_k": true,
+            "runs": [
+              {
+                "attempt": 1,
+                "passed": true,
+                "reason": "achou o valor 47300",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.992,
+                "gen_tokens": 188,
+                "max_tokens": 2048,
+                "total_time": 26.4
+              },
+              {
+                "attempt": 2,
+                "passed": true,
+                "reason": "achou o valor 47300",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.991,
+                "gen_tokens": 187,
+                "max_tokens": 2048,
+                "total_time": 5.4
+              }
+            ]
+          },
+          "instruction_json": {
+            "axis": "instruction",
+            "attempts": 2,
+            "passes": 2,
+            "pass_rate": 1.0,
+            "pass_at_1": true,
+            "pass_at_k": true,
+            "runs": [
+              {
+                "attempt": 1,
+                "passed": true,
+                "reason": "JSON puro e schema completo",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.951,
+                "gen_tokens": 489,
+                "max_tokens": 4096,
+                "total_time": 13.8
+              },
+              {
+                "attempt": 2,
+                "passed": true,
+                "reason": "JSON puro e schema completo",
+                "detail": "",
+                "truncated": false,
+                "finish_reason": "stop",
+                "reasoning_share": 0.983,
+                "gen_tokens": 1336,
+                "max_tokens": 4096,
+                "total_time": 35.5
+              }
+            ]
+          }
+        },
+        "by_axis": {
+          "bugfix": {
+            "tasks": 2,
+            "pass_rate": 0.75,
+            "all_passed_once": true
+          },
+          "patch_format": {
+            "tasks": 1,
+            "pass_rate": 0.0,
+            "all_passed_once": false
+          },
+          "tool_call": {
+            "tasks": 1,
+            "pass_rate": 1.0,
+            "all_passed_once": true
+          },
+          "long_context": {
+            "tasks": 1,
+            "pass_rate": 1.0,
+            "all_passed_once": true
+          },
+          "instruction": {
+            "tasks": 1,
+            "pass_rate": 1.0,
+            "all_passed_once": true
+          }
+        },
+        "truncated_runs": 3,
+        "artifacts": "benchmark-report/responses/moe_com_reasoning_4x"
+      }
+    }
+  ],
+  "finished_at": "2026-08-03T23:11:27+00:00"
+}

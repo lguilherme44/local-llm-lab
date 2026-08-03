@@ -97,12 +97,28 @@ A correção reflexa seria adicionar `--reasoning off` em todos. **Não faça is
 objetivo é qualidade de código, não velocidade, e raciocínio geralmente *melhora* o resultado.
 Desligá-lo para caber no orçamento troca a dimensão que interessa pela que não interessa.
 
-- [ ] **2.11** Dimensionar `max_tokens` contabilizando o raciocínio (não 8000 fixo para todos).
-- [ ] **2.12** Medir `reasoning_share` por modelo e por tarefa, e reportar como dado de primeira
-      classe. Um modelo que queima 90% da cota pensando para escrever HTML é um fato relevante sobre
-      esse modelo.
-- [ ] **2.13** Rodar a mesma tarefa com reasoning ligado e desligado no mesmo modelo, e comparar
-      qualidade. É a única forma de decidir isso com dado em vez de intuição.
+- [x] **2.11** `--max-tokens-scale` dimensiona o orçamento por rodada, em vez de um valor fixo
+      para todos.
+- [x] **2.12** `reasoning_share` é campo de primeira classe no JSON e aparece no resumo de cada
+      geração.
+- [x] **2.13** A/B de reasoning no `moe`, três braços. **Decidido: manter `--reasoning off`.**
+      18/18 sem reasoning; 8/18 com, no orçamento base (todos os FAILs truncados com 100% de
+      reasoning); 9/12 com 4× de orçamento. Custo de 7-20× mais tokens, e o `patch_format`
+      degenera em loop mesmo com 8192 tokens — 819 linhas de raciocínio re-copiando o mesmo
+      código (`def clear(self):` 42 vezes) para uma tarefa que sem reasoning sai em 45 tokens.
+      Tabela e análise em `docs/diagnostico-linux-benchmark.md`.
+- [x] **2.14** `LLM_REASONING=on|off` no `llm-server.sh`, e `--reasoning` / `--label` /
+      `--max-tokens-scale` no pipeline, para A/B sem editar a tabela de perfis.
+
+- [ ] **3.11** **A suíte não tem resolução para medir ganho.** O baseline acerta 18/18, que é
+      teto: qualquer variação só pode empatar ou piorar. Para comparar estratégias é preciso
+      ter tarefas onde o `--reasoning off` também falhe:
+      - bug com causa não-local (o sintoma está longe da origem)
+      - refactor que exige preservar invariante não declarado no teste
+      - caso onde a resposta óbvia está errada
+      - tarefa multi-arquivo, com o bug num arquivo e o teste em outro
+      Sem isso, "reasoning ajuda no trabalho real?" continua aberta — o 2.13 só mostrou que
+      não ajuda nas tarefas fáceis.
 
 ## Fase 3 — Suíte de qualidade objetiva
 

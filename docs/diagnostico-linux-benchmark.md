@@ -286,6 +286,69 @@ arquitetura adequada a 8 GB de VRAM com experts na RAM. O problema nunca foi o m
 
 ---
 
+## Experimento: reasoning ligado vs desligado no `moe`
+
+Rodado em 03/08/2026, três braços, mesmo modelo e mesma máquina. `--repeats 3` nos dois
+primeiros, 2 no terceiro.
+
+| tarefa | sem reasoning | com, orçamento base | com, orçamento 4× | tokens 4× | bateu o teto? |
+|---|---|---|---|---|---|
+| `bugfix_roman` | 3/3 | 3/3 | 2/2 | 1158 | não |
+| `bugfix_merge` | 3/3 | **0/3** | 1/2 | 12288 | **sim** |
+| `patch_format` | 3/3 | **1/3** | **0/2** | 8192 | **sim** |
+| `tool_call` | 3/3 | **0/3** | 2/2 | 2189 | não |
+| `long_context` | 3/3 | 3/3 | 2/2 | 188 | não |
+| `instruction_json` | 3/3 | **2/3** | 2/2 | 1336 | não |
+| **total** | **18/18** | **8/18** | **9/12** | | |
+
+### O primeiro braço não mediu qualidade, mediu orçamento
+
+Todos os FAILs do braço "orçamento base" têm `reasoning_share = 100%` e
+`finish_reason = length`. O modelo gastou a cota inteira pensando e **nunca chegou a
+escrever a resposta**. Comparar 18/18 com 8/18 aí seria comparar orçamento, não modelo —
+o mesmo erro que truncava as landing pages.
+
+Vale registrar que o pipeline pegou isso na primeira execução, via `finish_reason` e
+`reasoning_share`. A versão anterior teria reportado "8/18, reasoning é pior".
+
+### Custo real do reasoning: 7 a 20× mais tokens
+
+`bugfix_merge` sai de 149 tokens para 3072+. `tool_call`, de 56 para 2189. Para o mesmo
+resultado, quando há resultado.
+
+### O achado que sobrevive ao orçamento: degeneração em loop
+
+`patch_format` falhou nos **dois** braços com reasoning, e falhou com 8192 tokens de
+orçamento. Isso não é falta de espaço — é loop.
+
+O raciocínio de uma tentativa tem 31.665 caracteres e 819 linhas com conteúdo. As linhas
+mais frequentes:
+
+```
+48x      self.store = {}
+42x  def clear(self):
+37x  ```
+```
+
+O modelo re-copia o código original e re-rascunha o mesmo patch repetidamente, sem
+fechar a resposta. A tarefa é adicionar um método `size()` de duas linhas. Sem reasoning,
+resolve em 45 tokens, 3/3.
+
+### Conclusão prática
+
+Para este modelo, nesta suíte: **manter `--reasoning off`**. Custa 7-20× mais tokens, não
+melhora nada, e degenera em loop em pelo menos uma tarefa.
+
+### O que este experimento NÃO prova
+
+O controle deu 18/18 — teto. Uma suíte onde o baseline acerta tudo **não tem resolução
+para detectar ganho**: reasoning só podia empatar ou piorar. "Empatou nas tarefas fáceis"
+não é evidência de que reasoning não ajuda em trabalho difícil.
+
+Para responder isso a suíte precisa de tarefas onde o `--reasoning off` também falhe: bug
+com causa não-local, refactor que exige preservar invariante, caso onde a resposta óbvia
+está errada. Está no `TODO.md` 3.11.
+
 ## Parte 2 — Por que as estatísticas não concluem nada
 
 Defeitos em `scripts/run_moe_benchmark_pipeline.py`, por linha da versão original:

@@ -104,26 +104,97 @@ else
 fi
 
 # ─── perfis ─────────────────────────────────────────────────────────────────────
-#  perfil | repo | weights_gb | ctx | vram_gb | ram_gb | cpu_moe | tools | file | extra_args | desc
+#  perfil | repo | quant | weights_gb | ctx | vram_gb | ram_gb | cpu_moe | ngl | tools | file | extra_args | desc
+#
+# Sobre a coluna `ngl` — ela existe porque -ngl e --n-cpu-moe NÃO são a mesma
+# coisa, e a versão anterior derivava um do outro (`default_ngl="$cpu_moe"`).
+# Funcionava por coincidência.
+#
+#   -ngl N          quantas camadas do modelo vão para a VRAM
+#   --n-cpu-moe N   de quantas camadas os tensores de expert ficam na RAM
+#
+# Regra descoberta na prática neste build (b10242) e não documentada de forma
+# óbvia: `--n-cpu-moe` seta `tensor_buft_overrides`, o que ABORTA o auto-fit:
+#
+#   W common_fit_params: failed to fit params to free device memory:
+#     model_params::tensor_buft_overrides already set by user, abort
+#
+# Consequência: perfil com cpu_moe > 0 é OBRIGADO a passar -ngl explícito. Se
+# passar `auto`, o fit aborta, cai para "todas as camadas" e dá
+# ErrorOutOfDeviceMemory na carga. Testado.
+#
+# Portanto: cpu_moe = 0  ->  ngl = auto  (deixa o llama.cpp dimensionar)
+#           cpu_moe > 0  ->  ngl = 99 e o ajuste real vai no cpu_moe
+#
+# COMO AFINAR UM PERFIL MoE (varredura medida no perfil `moe`, CUDA, 3060 Ti):
+#
+#   ngl  cpu_moe   geração    VRAM        veredito
+#    36    36      25.4 tok/s  4.5 GB     ponto de partida herdado do Windows
+#    99    36      32.0 tok/s  4.9 GB     só subir o ngl já dá +26%
+#    99    32      36.1 tok/s  6.4 GB
+#    99    30      37.7 tok/s  7.1 GB     <- escolhido: +50% com folga de ~1 GB
+#    99    29      38.2 tok/s  7.5 GB     fio de navalha, qualquer app derruba
+#    99    28      abort (core dumped)    estourou a VRAM
+#
+# O botão é o cpu_moe, não o ngl: baixá-lo devolve tensores de expert para a
+# VRAM. Desça de 4 em 4 até dar abort, depois suba 2 e pare — deixando ~1 GB
+# para o desktop, senão abrir o navegador mata o servidor.
+#
+# Varre sem editar o script:
+#   LLM_NGL=99 LLM_CPU_MOE=30 ./linux/llm-server.sh restart moe --lan
+#
+# Os perfis `deepseek` e `frontier` ainda NÃO passaram por essa varredura; os
+# números deles vieram do Windows. Ver TODO.md 1.8.
 get_profiles() {
   cat <<'EOF'
-agent|Qwen/Qwen3-8B-GGUF|Q4_K_M|5.03|16384|6.24|0.5|0|sim||--reasoning off|Qwen3 8B. Tool calling validado (ciclo completo). ~73 tok/s de geracao nesta 3060 Ti. Padrao.
-fast|Qwen/Qwen2.5-Coder-7B-Instruct-GGUF|Q4_K_M|4.30|16384|5.40|0.5|0|nao|||Qwen2.5 Coder 7B. Especialista em código puro, ~80 tok/s. Não serve como agente.
-moe|unsloth/Qwen3.6-35B-A3B-GGUF|UD-IQ4_NL|16.80|16384|6.17|12.5|36|sim|Qwen3.6-35B-A3B-UD-IQ4_NL.gguf|--reasoning off|Qwen3.6 35B MoE (3B ativos) via Unsloth. 36 camadas de expert na RAM, atencao na VRAM. ~26 tok/s.
-qwen27b|unsloth/Qwen3.6-27B-MTP-GGUF|IQ4_NL|15.22|16384|7.00|10.0|24|sim|Qwen3.6-27B-IQ4_NL.gguf||Qwen3.6 27B em IQ4_NL (15.22 GB). Excelente equilíbrio entre modelo denso e performance.
-bonsai|prism-ml/Bonsai-27B-gguf|dspark-bf16|6.79|16384|7.00|6.0|0|sim|Bonsai-27B-dspark-bf16.gguf||Bonsai 27B em dspark-bf16 (6.79 GB). Modelo 27B ultra-compacto da Prism ML.
-deepseek|bartowski/DeepSeek-Coder-V2-Lite-Instruct-GGUF|Q4_K_M|9.11|16384|8.00|6.0|16|sim|DeepSeek-Coder-V2-Lite-Instruct-Q4_K_M.gguf||DeepSeek Coder V2 Lite 16B MoE em Q4_K_M. Excelente precisão para código e resposta rápida.
-frontier|unsloth/DeepSeek-V4-Flash-0731-GGUF|UD-IQ1_S|76.87|8192|7.00|15.0|128|sim|DeepSeek-V4-Flash-0731-UD-IQ1_S-00001-of-00003.gguf||DeepSeek V4 Flash Frontier MoE (76.8 GB). Experimento de qualidade máxima via mmap/SSD.
-quality|bartowski/gemma-4-12B-it-GGUF|Q4_K_M|7.30|8192|7.80|1.0|0|sim|||Gemma 4 12B. Aceita imagens e texto. Exige liberar VRAM para rodar liso.
-tiny|Qwen/Qwen2.5-Coder-3B-Instruct-GGUF|Q4_K_M|2.00|16384|2.90|0.3|0|nao|||Qwen2.5 Coder 3B. Leve, ~110 tok/s. Ótimo para autocompletar e testes rápidos.
+agent|Qwen/Qwen3-8B-GGUF|Q4_K_M|5.03|16384|6.24|0.5|0|auto|sim||--reasoning off|Qwen3 8B. Tool calling validado (ciclo completo). ~73 tok/s de geracao nesta 3060 Ti. Padrao.
+fast|Qwen/Qwen2.5-Coder-7B-Instruct-GGUF|Q4_K_M|4.30|16384|5.40|0.5|0|auto|nao|||Qwen2.5 Coder 7B. Especialista em código puro, ~80 tok/s. Não serve como agente.
+moe|unsloth/Qwen3.6-35B-A3B-GGUF|UD-IQ4_NL|16.80|16384|7.10|12.5|30|99|sim|Qwen3.6-35B-A3B-UD-IQ4_NL.gguf|--reasoning off|Qwen3.6 35B MoE (3B ativos). 37.7 tok/s medidos sob CUDA com ngl 99 + cpu_moe 30. Melhor custo-beneficio nesta maquina.
+qwen27b|unsloth/Qwen3.6-27B-MTP-GGUF|IQ4_NL|15.22|16384|7.00|10.0|24|24|sim|Qwen3.6-27B-IQ4_NL.gguf||Qwen3.6 27B em IQ4_NL (15.22 GB). Excelente equilíbrio entre modelo denso e performance.
+bonsai|prism-ml/Bonsai-27B-gguf|dspark-bf16|6.79|16384|7.00|6.0|0|auto|sim|Bonsai-27B-dspark-bf16.gguf||Bonsai 27B em dspark-bf16 (6.79 GB). Modelo 27B ultra-compacto da Prism ML.
+deepseek|bartowski/DeepSeek-Coder-V2-Lite-Instruct-GGUF|Q4_K_M|9.11|16384|8.00|6.0|16|16|sim|DeepSeek-Coder-V2-Lite-Instruct-Q4_K_M.gguf||DeepSeek Coder V2 Lite 16B MoE em Q4_K_M. Excelente precisão para código e resposta rápida.
+frontier|unsloth/DeepSeek-V4-Flash-0731-GGUF|UD-IQ1_S|76.87|8192|7.00|15.0|128|128|sim|DeepSeek-V4-Flash-0731-UD-IQ1_S-00001-of-00003.gguf||DeepSeek V4 Flash Frontier MoE (76.8 GB). Experimento de qualidade máxima via mmap/SSD.
+quality|bartowski/gemma-4-12B-it-GGUF|Q4_K_M|7.30|8192|7.80|1.0|0|auto|sim|||Gemma 4 12B. Aceita imagens e texto. Exige liberar VRAM para rodar liso.
+tiny|Qwen/Qwen2.5-Coder-3B-Instruct-GGUF|Q4_K_M|2.00|16384|2.90|0.3|0|auto|nao|||Qwen2.5 Coder 3B. Leve, ~110 tok/s. Ótimo para autocompletar e testes rápidos.
 EOF
+}
+
+# Resolve `repo` + `quant` num nome de arquivo .gguf concreto, via API do HF.
+#
+# Por que não usar o `-hf` do llama.cpp: o build local pode não ter TLS
+# funcionando, e aí o downloader interno falha com
+#
+#   W get_repo_files: failed to resolve commit for Qwen/Qwen3-8B-GGUF
+#   E llama_model_load_from_file_impl: exactly one out metadata, path_model,
+#     and file must be defined
+#
+# — mensagem que não menciona TLS e manda o diagnóstico para o lado errado.
+# Resolver aqui com curl elimina a dependência e trata todos os perfis igual.
+resolve_hf_file() {
+  local repo="$1" quant="$2"
+  curl -sf "https://huggingface.co/api/models/$repo" 2>/dev/null | python3 -c "
+import json, sys
+quant = sys.argv[1].lower()
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+ggufs = [s['rfilename'] for s in data.get('siblings', [])
+         if s['rfilename'].lower().endswith('.gguf')]
+# Preferir correspondência exata do quant; nunca pegar parte de um split.
+exatos = [f for f in ggufs if quant in f.lower() and '-of-' not in f.lower()]
+alvo = exatos or [f for f in ggufs if quant in f.lower()]
+if not alvo:
+    sys.exit(1)
+print(sorted(alvo, key=len)[0])
+" "$quant" 2>/dev/null || true
 }
 
 find_profile() {
   local target="$1"
-  while IFS='|' read -r name repo quant file_gb ctx vram_gb ram_gb cpu_moe tools file extra_args desc; do
+  while IFS='|' read -r name repo quant file_gb ctx vram_gb ram_gb cpu_moe ngl tools file extra_args desc; do
     if [[ "$name" == "$target" ]]; then
-      echo "$name|$repo|$quant|$file_gb|$ctx|$vram_gb|$ram_gb|$cpu_moe|$tools|$file|$extra_args|$desc"
+      echo "$name|$repo|$quant|$file_gb|$ctx|$vram_gb|$ram_gb|$cpu_moe|$ngl|$tools|$file|$extra_args|$desc"
       return 0
     fi
   done < <(get_profiles)
@@ -131,47 +202,181 @@ find_profile() {
 }
 
 # ─── comando: setup ─────────────────────────────────────────────────────────────
+#
+# ATENÇÃO — por que aqui se compila em vez de baixar binário pronto:
+#
+# O release do llama.cpp NÃO publica build CUDA para Linux. Em b10242 os únicos
+# assets CUDA são `bin-win-cuda-12.4-x64.zip` e `-13.3-x64.zip`. Para Linux há
+# vulkan, rocm, sycl, openvino e CPU puro — nada de CUDA.
+#
+# A versão anterior deste script baixava `bin-ubuntu-vulkan-x64.tar.gz` e se
+# descrevia como "com CUDA". O Vulkan na 3060 Ti mediu 2.69 tok/s de geração e
+# 1-9 tok/s de prefill, com a GPU a 18% de uso. Não é uma diferença de ajuste
+# fino: é a diferença entre usável e inutilizável.
+#
+# Havia um fallback que compilava, mas só se o download falhasse. O download do
+# Vulkan sempre teve sucesso, então o caminho de compilação nunca executou.
+#
+# Detalhes: docs/diagnostico-linux-benchmark.md
+#
 cmd_setup() {
-  echo "${B}Configurando llm-server no Linux (llama.cpp)...${R}"
+  local backend="${LLM_BACKEND:-cuda}"
+  echo "${B}Configurando llm-server no Linux (llama.cpp, backend: ${CYA}$backend${R}${B})...${R}"
   mkdir -p "$BIN_DIR" "$MODEL_DIR" "$RUN_DIR"
 
   if command -v nvidia-smi &>/dev/null; then
     echo "${GRN}✓ GPU NVIDIA e drivers detectados.${R}"
+    nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader
   else
     echo "${YLW}⚠️ AVISO: GPU NVIDIA não foi encontrada com nvidia-smi.${R}"
   fi
 
-  # Baixar a versão mais recente do llama-server precompilado no GitHub
-  echo "Buscando a última versão do llama.cpp no GitHub..."
-  LATEST_TAG=$(curl -s https://api.github.com/repos/ggml-org/llama.cpp/releases/latest | grep '"tag_name":' | head -n1 | sed -E 's/.*"([^"]+)".*/\1/' || echo "b10235")
-  
-  URL="https://github.com/ggml-org/llama.cpp/releases/download/${LATEST_TAG}/llama-${LATEST_TAG}-bin-ubuntu-vulkan-x64.tar.gz"
-  TMP_TAR="/tmp/llama.tar.gz"
-  
-  echo "Baixando ${LATEST_TAG} de ${URL}..."
-  if curl -sL "$URL" -o "$TMP_TAR"; then
-    echo "Extraindo para $BIN_DIR..."
-    tar -xzf "$TMP_TAR" -C "$BIN_DIR" --strip-components=1 2>/dev/null || tar -xzf "$TMP_TAR" -C "$BIN_DIR"
-    rm -f "$TMP_TAR"
-    chmod +x "$BIN_DIR"/llama-* 2>/dev/null || true
+  if [[ "$backend" == "vulkan" ]]; then
+    setup_prebuilt_vulkan
   else
-    echo "${RED}Falha no download direto do arquivo precompilado. Tentando compilar via git...${R}"
-    TMP_SRC="/tmp/llama_src"
-    rm -rf "$TMP_SRC"
-    git clone --depth 1 https://github.com/ggerganov/llama.cpp "$TMP_SRC"
-    cmake -B "$TMP_SRC/build" -S "$TMP_SRC" -DGGML_CUDA=ON
-    cmake --build "$TMP_SRC/build" --config Release -j$(nproc) --target llama-server
-    cp "$TMP_SRC/build/bin/llama-server" "$BIN_DIR/"
-    rm -rf "$TMP_SRC"
+    setup_build_cuda
   fi
 
   if [[ -x "$LLAMA_SERVER" ]]; then
-    echo "${GRN}✓ llama-server instalado com sucesso em $LLAMA_SERVER${R}"
-    "$LLAMA_SERVER" --version || true
+    echo "${GRN}✓ llama-server instalado em $LLAMA_SERVER${R}"
+    "$LLAMA_SERVER" --version 2>&1 | head -3 || true
+    echo ""
+    echo "${B}Backends compilados:${R}"
+    ls "$BIN_DIR"/libggml-*.so 2>/dev/null | sed 's|.*/libggml-||; s|\.so$||' | tr '\n' ' '
+    echo ""
+    if ls "$BIN_DIR"/libggml-cuda* &>/dev/null; then
+      echo "${GRN}✓ CUDA presente.${R}"
+    elif [[ "$backend" == "cuda" ]]; then
+      echo "${RED}❌ Compilou, mas sem libggml-cuda. Verifique se o nvcc foi encontrado pelo cmake.${R}"
+      exit 1
+    fi
   else
     echo "${RED}❌ Erro ao instalar llama-server.${R}"
     exit 1
   fi
+}
+
+# Compila com CUDA. Único caminho que entrega aceleração real nesta máquina.
+setup_build_cuda() {
+  local missing=()
+  command -v nvcc  &>/dev/null || missing+=("nvidia-cuda-toolkit (nvcc)")
+  command -v cmake &>/dev/null || missing+=("cmake")
+  command -v g++   &>/dev/null || missing+=("build-essential (g++)")
+  command -v git   &>/dev/null || missing+=("git")
+
+  # Falhar alto e com instrução acionável. Cair no Vulkan em silêncio foi
+  # exatamente o defeito que produziu 2.69 tok/s sem ninguém perceber.
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    echo ""
+    echo "${RED}❌ Faltam dependências para compilar com CUDA:${R}"
+    printf '   • %s\n' "${missing[@]}"
+    echo ""
+    echo "${B}Instale (precisa de sudo):${R}"
+    echo "   ${CYA}sudo apt update${R}"
+    echo "   ${CYA}sudo apt install -y cmake build-essential nvidia-cuda-toolkit${R}"
+    echo ""
+    echo "Depois rode de novo: ${CYA}./linux/llm-server.sh setup${R}"
+    echo ""
+    echo "${DIM}Se realmente quiser o build Vulkan precompilado (muito mais lento,${R}"
+    echo "${DIM}medido em 2.69 tok/s nesta 3060 Ti): LLM_BACKEND=vulkan ./linux/llm-server.sh setup${R}"
+    exit 1
+  fi
+
+  local src_dir="$ROOT_DIR/src"
+  echo "${B}Compilando llama.cpp com CUDA (10-25 min em $(nproc) cores)...${R}"
+
+  if [[ -d "$src_dir/.git" ]]; then
+    echo "Atualizando fonte em $src_dir..."
+    git -C "$src_dir" fetch --depth 1 origin master
+    git -C "$src_dir" reset --hard origin/master
+  else
+    rm -rf "$src_dir"
+    echo "Clonando llama.cpp..."
+    git clone --depth 1 https://github.com/ggml-org/llama.cpp "$src_dir"
+  fi
+
+  # CMAKE_CUDA_ARCHITECTURES=86 = Ampere (RTX 30xx). Compilar só a arquitetura
+  # alvo corta bastante do tempo de build.
+  local cuda_arch="${LLM_CUDA_ARCH:-86}"
+
+  # O nvcc recusa host compiler mais novo do que ele suporta, e o padrão do
+  # sistema costuma ser mais novo. No Pop!_OS 24.04: nvcc 12.0 + gcc 13.3 dá
+  #
+  #   #error -- unsupported GNU version! gcc versions later than 12 are not
+  #   supported!
+  #
+  # Em vez de passar `-allow-unsupported-compiler` e rezar, procura-se o gcc
+  # compatível mais novo que esteja instalado. `nvcc` diz o teto na própria
+  # mensagem de erro do host_config.h, então lê-se de lá.
+  local host_cc="" host_cxx=""
+  local max_gnu
+  max_gnu=$(grep -oP 'gcc versions later than \K[0-9]+' \
+            /usr/include/crt/host_config.h 2>/dev/null | head -1 || true)
+  if [[ -n "$max_gnu" ]]; then
+    local v
+    for ((v = max_gnu; v >= 9; v--)); do
+      if command -v "gcc-$v" &>/dev/null && command -v "g++-$v" &>/dev/null; then
+        host_cc="$(command -v "gcc-$v")"
+        host_cxx="$(command -v "g++-$v")"
+        echo "${DIM}nvcc aceita gcc até $max_gnu; usando gcc-$v como host compiler${R}"
+        break
+      fi
+    done
+    if [[ -z "$host_cc" ]]; then
+      echo "${RED}❌ nvcc aceita no máximo gcc-$max_gnu, e nenhum gcc-<=$max_gnu está instalado.${R}"
+      echo "   Instale com: ${CYA}sudo apt install -y gcc-$max_gnu g++-$max_gnu${R}"
+      exit 1
+    fi
+  fi
+
+  local cmake_args=(
+    -B "$src_dir/build" -S "$src_dir"
+    -DGGML_CUDA=ON
+    -DCMAKE_CUDA_ARCHITECTURES="$cuda_arch"
+    -DCMAKE_BUILD_TYPE=Release
+    -DLLAMA_BUILD_TESTS=OFF
+    -DLLAMA_BUILD_EXAMPLES=OFF
+    -DLLAMA_CURL=ON
+  )
+  if [[ -n "$host_cc" ]]; then
+    cmake_args+=(
+      -DCMAKE_CUDA_HOST_COMPILER="$host_cxx"
+      -DCMAKE_C_COMPILER="$host_cc"
+      -DCMAKE_CXX_COMPILER="$host_cxx"
+    )
+  fi
+
+  cmake "${cmake_args[@]}"
+
+  cmake --build "$src_dir/build" --config Release -j"$(nproc)" --target llama-server llama-bench
+
+  # O build espalha binário e .so por bin/ — copiar os dois, senão o
+  # llama-server sobe sem encontrar o backend CUDA.
+  cp -f "$src_dir/build/bin/llama-server" "$BIN_DIR/"
+  cp -f "$src_dir/build/bin/llama-bench" "$BIN_DIR/" 2>/dev/null || true
+  cp -f "$src_dir"/build/bin/*.so* "$BIN_DIR/" 2>/dev/null || true
+  chmod +x "$BIN_DIR"/llama-* 2>/dev/null || true
+}
+
+# Fallback explícito, só via LLM_BACKEND=vulkan. Não é o caminho padrão.
+setup_prebuilt_vulkan() {
+  echo "${YLW}⚠️ Backend Vulkan: mediu 2.69 tok/s de geração e 1-9 tok/s de prefill${R}"
+  echo "${YLW}   nesta RTX 3060 Ti. Use CUDA a menos que tenha um motivo concreto.${R}"
+
+  echo "Buscando a última versão do llama.cpp no GitHub..."
+  local tag
+  tag=$(curl -s https://api.github.com/repos/ggml-org/llama.cpp/releases/latest \
+        | grep '"tag_name":' | head -n1 | sed -E 's/.*"([^"]+)".*/\1/')
+  [[ -n "$tag" ]] || { echo "${RED}Não consegui descobrir a última tag.${R}"; exit 1; }
+
+  local url="https://github.com/ggml-org/llama.cpp/releases/download/${tag}/llama-${tag}-bin-ubuntu-vulkan-x64.tar.gz"
+  local tmp_tar="/tmp/llama-${tag}.tar.gz"
+
+  echo "Baixando ${tag}..."
+  curl -fL "$url" -o "$tmp_tar" || { echo "${RED}Falha no download de $url${R}"; exit 1; }
+  tar -xzf "$tmp_tar" -C "$BIN_DIR" --strip-components=1 2>/dev/null || tar -xzf "$tmp_tar" -C "$BIN_DIR"
+  rm -f "$tmp_tar"
+  chmod +x "$BIN_DIR"/llama-* 2>/dev/null || true
 }
 
 # ─── status do processo ─────────────────────────────────────────────────────────
@@ -210,39 +415,84 @@ cmd_start() {
   local p_data
   p_data=$(find_profile "$prof_name") || { echo "${RED}Perfil '$prof_name' não existe.${R}"; exit 1; }
 
-  IFS='|' read -r name repo quant file_gb ctx vram_gb ram_gb cpu_moe tools file extra_args desc <<< "$p_data"
+  IFS='|' read -r name repo quant file_gb ctx vram_gb ram_gb cpu_moe ngl tools file extra_args desc <<< "$p_data"
   local final_ctx="${CUSTOM_CTX:-$ctx}"
 
   echo "${B}Subindo llm-server [perfil: ${CYA}$prof_name${R}${B}]...${R}"
   echo "${DIM}Modelo: $repo ($quant) | Ctx: $final_ctx | Host: $BIND_HOST:$PORT${R}"
+  echo "${DIM}ngl: ${LLM_NGL:-${ngl:-auto}} | KV: ${LLM_KV_TYPE:-q8_0} | cpu_moe: ${LLM_CPU_MOE:-$cpu_moe}${R}"
 
-  local default_ngl=28
-  if [[ "$cpu_moe" -gt 0 ]]; then
-    default_ngl="$cpu_moe"
-  fi
-
+  # -ngl e --n-cpu-moe são grandezas DIFERENTES e a versão anterior as confundia:
+  #
+  #   -ngl N          quantas camadas do modelo vão para a VRAM
+  #   --n-cpu-moe N   de quantas camadas os tensores de expert ficam na RAM
+  #
+  # O código antigo fazia `default_ngl="$cpu_moe"`, então o perfil qwen27b
+  # (cpu_moe=24) subia com `-ngl 24 --n-cpu-moe 24`. Efeito no log do servidor:
+  #
+  #   W common_fit_params: failed to fit params to free device memory:
+  #     n_gpu_layers already set by user to 24, abort
+  #
+  # O valor vem da coluna `ngl` do perfil — ver o comentário em get_profiles
+  # para a regra (cpu_moe > 0 exige número explícito; senão, `auto`).
+  #
+  # Não use 999 como faz o windows/llm-server.ps1: neste build QUALQUER valor
+  # explícito desliga o common_fit_params, então 999 não é "reduza se não
+  # couber", é "aloque tudo". Testado no qwen27b: ErrorOutOfDeviceMemory.
+  local final_ngl="${LLM_NGL:-${ngl:-auto}}"
   local ARGS=(
     "--host" "$BIND_HOST"
     "--port" "$PORT"
     "-c" "$final_ctx"
-    "-ngl" "${LLM_NGL:-$default_ngl}"
+    "-ngl" "$final_ngl"
     "-np" "1"
+    # -ctk/-ctv q8_0 corta o cache KV pela metade — é o que faz 16k de contexto
+    # caber em 8 GB de VRAM. Sem isso o KV vai a f16 e o modelo transborda para
+    # a RAM, que já está no limite, e daí para o swap (medido: si/so != 0).
+    "-ctk" "${LLM_KV_TYPE:-q8_0}"
+    "-ctv" "${LLM_KV_TYPE:-q8_0}"
+    # flash attention: menos memória e mais velocidade em Ampere.
+    "-fa" "on"
+    # usa o chat template do próprio modelo (é o default, mas explícito evita
+    # regressão silenciosa se o default mudar).
+    "--jinja"
+    "-a" "$prof_name"
     "--api-key" "$API_KEY"
   )
 
-  if [[ -n "$file" ]]; then
-    local model_path="$MODEL_DIR/$file"
-    if [[ ! -f "$model_path" ]]; then
-      echo "${YLW}Baixando peso $file...${R}"
-      curl -C - -L "https://huggingface.co/$repo/resolve/main/$file" -o "$model_path"
+  # Todo perfil passa por `-m` com caminho local, inclusive os que não declaram
+  # `file` — nesses, o nome é resolvido via API do HF. Ver resolve_hf_file().
+  local resolved="$file"
+  if [[ -z "$resolved" ]]; then
+    echo "${DIM}resolvendo arquivo .gguf de $repo ($quant) na API do HF...${R}"
+    resolved=$(resolve_hf_file "$repo" "$quant")
+    if [[ -z "$resolved" ]]; then
+      echo "${RED}❌ Não achei um .gguf com quant '$quant' em $repo.${R}"
+      echo "   Verifique em: ${CYA}https://huggingface.co/$repo/tree/main${R}"
+      exit 1
     fi
-    ARGS+=("-m" "$model_path")
-  else
-    ARGS+=("-hf" "$repo:$quant")
+    echo "${DIM}→ $resolved${R}"
   fi
 
-  if [[ "$cpu_moe" -gt 0 ]]; then
-    ARGS+=("--n-cpu-moe" "$cpu_moe")
+  local model_path="$MODEL_DIR/$resolved"
+  if [[ ! -f "$model_path" ]]; then
+    echo "${YLW}Baixando peso $resolved...${R}"
+    mkdir -p "$(dirname "$model_path")"
+    curl -f -C - -L --progress-bar "https://huggingface.co//resolve/main/" \
+      -o "$model_path" || {
+        echo "${RED}❌ Download falhou. Removendo arquivo parcial.${R}"
+        rm -f "$model_path"
+        exit 1
+      }
+  fi
+  ARGS+=("-m" "$model_path")
+
+  # --n-cpu-moe é o botão que troca VRAM por RAM. Ajustável sem editar o script
+  # porque o valor certo depende da máquina concreta e do contexto em uso.
+  local final_cpu_moe="${LLM_CPU_MOE:-$cpu_moe}"
+  if [[ "$final_cpu_moe" -gt 0 ]]; then
+    ARGS+=("--n-cpu-moe" "$final_cpu_moe")
+    echo "${DIM}experts na RAM: primeiras $final_cpu_moe camadas (ajuste com LLM_CPU_MOE)${R}"
   fi
 
   if [[ -n "$extra_args" ]]; then
@@ -363,17 +613,18 @@ cmd_ask() {
   curl -s -X POST "http://$PROBE_HOST:$PORT/v1/chat/completions" \
     -H "Authorization: Bearer $API_KEY" \
     -H "Content-Type: application/json" \
-    -d "$payload" | python3 -c "
+    -d "$payload" | python3 -c '
 import sys, json
 try:
     data = json.load(sys.stdin)
-    print(data['choices'][0]['message']['content'])
-    if 'usage' in data:
-        u = data['usage']
-        print(f'\n--- {u.get(\"completion_tokens\", 0)} tokens gerados ---')
+    print(data["choices"][0]["message"]["content"])
+    if "usage" in data:
+        u = data["usage"]
+        tok = u.get("completion_tokens", 0)
+        print("\n--- %s tokens gerados ---" % tok)
 except Exception as e:
-    print('Erro ao parsear resposta:', e)
-"
+    print("Erro ao parsear resposta:", e)
+'
 }
 
 # ─── comando: bench ─────────────────────────────────────────────────────────────
@@ -444,22 +695,38 @@ cmd_pull() {
   local prof_name="${1:-$DEFAULT_PROFILE}"
   local p_data
   p_data=$(find_profile "$prof_name") || { echo "${RED}Perfil '$prof_name' não existe.${R}"; exit 1; }
-  IFS='|' read -r name repo quant file_gb ctx vram_gb ram_gb cpu_moe tools file extra_args desc <<< "$p_data"
+  IFS='|' read -r name repo quant file_gb ctx vram_gb ram_gb cpu_moe ngl tools file extra_args desc <<< "$p_data"
 
   mkdir -p "$MODEL_DIR"
-  if [[ -n "$file" ]]; then
-    local model_path="$MODEL_DIR/$file"
-    echo "${B}Baixando/Verificando peso do perfil '$prof_name' ($file_gb GB)...${R}"
-    if [[ -n "$INHIBIT" ]]; then
-      $INHIBIT curl -C - -L "https://huggingface.co/$repo/resolve/main/$file" -o "$model_path"
-    else
-      curl -C - -L "https://huggingface.co/$repo/resolve/main/$file" -o "$model_path"
+
+  local resolved="$file"
+  if [[ -z "$resolved" ]]; then
+    resolved=$(resolve_hf_file "$repo" "$quant")
+    if [[ -z "$resolved" ]]; then
+      echo "${RED}❌ Não achei um .gguf com quant '$quant' em $repo.${R}"
+      exit 1
     fi
-    echo "${GRN}✓ Download concluído com sucesso em $model_path!${R}"
-  else
-    echo "Baixando repositório HF $repo ($quant)..."
-    "$LLAMA_SERVER" -hf "$repo:$quant" --version || true
+    echo "${DIM}resolvido: $resolved${R}"
   fi
+
+  local model_path="$MODEL_DIR/$resolved"
+  if [[ -f "$model_path" ]]; then
+    echo "${GRN}✓ Peso já presente: $model_path${R}"
+    return 0
+  fi
+
+  echo "${B}Baixando peso do perfil '$prof_name' (~$file_gb GB)...${R}"
+  # `|| { rm; exit 1 }` importa: a versão anterior deixava arquivo parcial no
+  # disco e o `start` seguinte falhava com erro de GGUF corrompido, longe da
+  # causa. Falhar aqui, alto, é mais barato.
+  if [[ -n "$INHIBIT" ]]; then
+    $INHIBIT curl -f -C - -L --progress-bar "https://huggingface.co//resolve/main/" -o "$model_path" \
+      || { echo "${RED}❌ Download falhou.${R}"; rm -f "$model_path"; exit 1; }
+  else
+    curl -f -C - -L --progress-bar "https://huggingface.co//resolve/main/" -o "$model_path" \
+      || { echo "${RED}❌ Download falhou.${R}"; rm -f "$model_path"; exit 1; }
+  fi
+  echo "${GRN}✓ Download concluído em $model_path${R}"
 }
 
 # ─── comando: models ────────────────────────────────────────────────────────────
@@ -474,7 +741,7 @@ cmd_models() {
     curr_prof=$(cat "$PROF_FILE" 2>/dev/null || echo "")
   fi
 
-  while IFS='|' read -r name repo quant file_gb ctx vram_gb ram_gb cpu_moe tools file extra_args desc; do
+  while IFS='|' read -r name repo quant file_gb ctx vram_gb ram_gb cpu_moe ngl tools file extra_args desc; do
     local mark=" "
     if [[ "$name" == "$curr_prof" ]]; then mark="*"; fi
     printf "%-10s %-42s %-8s %-12s %s\n" "$mark$name" "$repo" "${file_gb}GB" "$tools" "$desc"

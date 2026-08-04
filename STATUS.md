@@ -277,6 +277,30 @@ Lição de método: **`NAO_CARREGOU` não é veredito sobre o modelo.** Foi prec
 para descobrir que era orçamento de VRAM, e não incompatibilidade. O `sweep_models.sh` já imprime as
 últimas linhas do log justamente por isso.
 
+### E o primeiro conserto estava errado: mudei duas variáveis e creditei uma
+
+A tabela acima veio de testes que variavam `cpu_moe` **mantendo o `ngl 16` antigo do perfil**. Ao
+gravar o perfil eu escrevi `cpu_moe 20` **e** `ngl 99` — copiando a regra que funcionou no `moe` — e
+quebrou de novo, agora com `failed to allocate buffer for kv cache`.
+
+Varredura correta, variando só o `ngl`, com `cpu_moe 20` fixo e ctx 32k:
+
+| `ngl` | resultado | VRAM | geração |
+|---|---|---|---|
+| **16** | ok | **6.546 MiB** | **28,4 tok/s** ← adotado |
+| 20 | ok | 7.298 MiB | 28,9 tok/s |
+| 24 | OOM: faltaram 3.910 MiB de KV | — | — |
+| 28 | OOM: faltaram 4.590 MiB de KV | — | — |
+
+**A regra "`ngl 99` e deixa o llama.cpp decidir" NÃO é universal.** Ela vale para o `moe`; aqui o KV
+cache pede ~4,6 GB em ctx 32k mesmo em `q8_0`, então subir o `ngl` rouba exatamente o espaço do KV.
+
+E `ngl 20` compra 0,5 tok/s por 750 MiB de folga — mesma troca ruim que fez o `moe` ficar em
+`cpu_moe 30` e não 29.
+
+Erro de método registrado porque é o mais banal de todos os desta sessão: **duas variáveis alteradas,
+efeito atribuído a uma.**
+
 ## 7y. CORREÇÃO IMPORTANTE: o gargalo era a ferramenta, não o insight
 
 Medido em 04/08/2026. A `timeline_midnight` — o bug não-local, o mais difícil das quatro — foi

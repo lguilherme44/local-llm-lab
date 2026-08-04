@@ -143,8 +143,22 @@ fi
 # Varre sem editar o script:
 #   LLM_NGL=99 LLM_CPU_MOE=30 ./linux/llm-server.sh restart moe --lan
 #
-# Os perfis `deepseek` e `frontier` ainda NÃO passaram por essa varredura; os
-# números deles vieram do Windows. Ver TODO.md 1.8.
+# O `deepseek` ensina que a regra "ngl 99 e deixa o llama.cpp decidir" NÃO é
+# universal. Varredura medida (cpu_moe 20 fixo, ctx 32k):
+#
+#   ngl  resultado                        VRAM       geração
+#    16  ok                               6.546 MiB  28.4 tok/s   <- escolhido
+#    20  ok                               7.298 MiB  28.9 tok/s   sem folga
+#    24  OOM: faltaram 3.910 MiB de KV       —          —
+#    28  OOM: faltaram 4.590 MiB de KV       —          —
+#
+# O KV cache deste modelo pede ~4,6 GB em ctx 32k mesmo em q8_0, então subir o
+# ngl rouba justamente o espaço que o KV precisa. Aqui `ngl 20` compra 0,5 tok/s
+# por 750 MiB de folga: troca ruim.
+#
+# O `frontier` continua sem varredura, e não vai passar por uma: aponta para o
+# DeepSeek-V4-Flash, 304 B de parâmetros e 82,5 GB no menor quant. Ver TODO 6.
+
 get_profiles() {
   cat <<'EOF'
 agent|Qwen/Qwen3-8B-GGUF|Q4_K_M|5.03|16384|6.24|0.5|0|auto|sim||--reasoning off|Qwen3 8B. Tool calling validado (ciclo completo). ~73 tok/s de geracao nesta 3060 Ti. Padrao.
@@ -152,7 +166,7 @@ fast|Qwen/Qwen2.5-Coder-7B-Instruct-GGUF|Q4_K_M|4.30|16384|5.40|0.5|0|auto|nao||
 moe|unsloth/Qwen3.6-35B-A3B-GGUF|UD-IQ4_NL|16.80|16384|7.10|12.5|30|99|sim|Qwen3.6-35B-A3B-UD-IQ4_NL.gguf|--reasoning off|Qwen3.6 35B MoE (3B ativos). 37.7 tok/s medidos sob CUDA com ngl 99 + cpu_moe 30. Melhor custo-beneficio nesta maquina.
 qwen27b|unsloth/Qwen3.6-27B-MTP-GGUF|IQ4_NL|15.22|16384|7.00|10.0|24|24|sim|Qwen3.6-27B-IQ4_NL.gguf||INVIAVEL nesta maquina: 3.1 tok/s medidos sob CUDA. 15.22 GB densos nao cabem em 8 GB de VRAM, entao ~9 GB rodam na CPU e a GPU fica a 17%. Mantido apenas como contraste didatico contra o MoE.
 bonsai|prism-ml/Bonsai-27B-gguf|Q1_0|3.80|16384|5.00|1.0|0|auto|sim|Bonsai-27B-Q1_0.gguf||NAO FUNCIONA com llama.cpp padrao: o quant Q1_0_g128 exige o fork da PrismML. Ver TODO 6.x. O arquivo antes referenciado aqui (dspark-bf16) era o DRAFTER de 3.6B e 6 camadas, nao o modelo.
-deepseek|bartowski/DeepSeek-Coder-V2-Lite-Instruct-GGUF|Q4_K_M|9.11|16384|6.55|6.0|20|99|sim|DeepSeek-Coder-V2-Lite-Instruct-Q4_K_M.gguf||DeepSeek Coder V2 Lite 16B MoE. cpu_moe 20 validado no Linux em ctx 32k (6.5 GB VRAM); com 16 dava OOM em 32k por 238 MiB. Em ctx 16k o 16 basta.
+deepseek|bartowski/DeepSeek-Coder-V2-Lite-Instruct-GGUF|Q4_K_M|9.11|16384|6.55|6.0|20|16|sim|DeepSeek-Coder-V2-Lite-Instruct-Q4_K_M.gguf||DeepSeek Coder V2 Lite 16B MoE. ngl 16 + cpu_moe 20 validado em ctx 32k: 28.4 tok/s, 6.5 GB VRAM. NAO suba o ngl: o KV cache deste modelo pede 4.6 GB em 32k, e ngl 24 ja estoura.
 frontier|unsloth/DeepSeek-V4-Flash-0731-GGUF|UD-IQ1_S|76.87|8192|7.00|15.0|128|128|sim|DeepSeek-V4-Flash-0731-UD-IQ1_S-00001-of-00003.gguf||DeepSeek V4 Flash Frontier MoE (76.8 GB). Experimento de qualidade máxima via mmap/SSD.
 quality|bartowski/gemma-4-12B-it-GGUF|Q4_K_M|7.30|8192|7.80|1.0|0|auto|sim|||Gemma 4 12B. Aceita imagens e texto. Exige liberar VRAM para rodar liso.
 tiny|Qwen/Qwen2.5-Coder-3B-Instruct-GGUF|Q4_K_M|2.00|16384|2.90|0.3|0|auto|nao|||Qwen2.5 Coder 3B. Leve, ~110 tok/s. Ótimo para autocompletar e testes rápidos.

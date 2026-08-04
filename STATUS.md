@@ -227,6 +227,56 @@ instrumento em vez do modelo?**
 - **Landing page não é benchmark.** Fica como amostra em `examples/`. Serve de smoke test de
   "produz saída longa sem quebrar" e nada além.
 
+## 7x. A suíte ORDENA modelos: o `agent` 8B é inutilizável como executor
+
+Varredura de 04/08, `--temperature 0.6 --repeats 2`, ctx 32k, as quatro fixtures de bug real:
+
+| tarefa | `moe` 35B-A3B | `agent` 8B |
+|---|---|---|
+| `timeline_midnight` | 4/5 | **0/2** |
+| `product_unavailable` | 3/3 | 1/2 |
+| `booking_horizon` | 3/3 | 0/2 |
+| `pwa_ios_starturl` | 3/3 | **0/2, e piorou: 5/8 → 1/8** |
+
+**Isso encerra a preocupação com saturação.** As tarefas saturam *para o `moe`*, mas separam os dois
+modelos com folga. É o primeiro avaliador do projeto capaz de ordenar — os anteriores davam 100%
+para todos.
+
+Dois modos de falha do 8B, e os dois são piores que lentidão:
+
+1. **Não age.** No `timeline_midnight` chamou `list_files` cinco vezes seguidas, nunca leu um
+   arquivo, e concluiu em 8,5 s com 189 tokens. Um executor que não age não é resgatável por plano
+   nem por mais turnos.
+2. **Piora o código.** No `pwa_ios_starturl` o placar foi de 5/8 para **1/8** — quebrou quatro
+   testes que estavam passando. Não é "falhou em corrigir", é "deixou pior do que encontrou".
+
+O 8B tem o **dobro** da velocidade de geração do `moe`. Mais uma confirmação de que tok/s não
+prediz utilidade — e a mais forte, porque aqui o rápido é ativamente destrutivo.
+
+## 7w. `deepseek` não era incompatível — faltavam 238 MiB de VRAM
+
+A primeira varredura reportou `NAO_CARREGOU` para o `deepseek`. O log do servidor:
+
+```
+ggml_backend_cuda_buffer_type_alloc_buffer: allocating 238.89 MiB on device 0:
+  cudaMalloc failed: out of memory
+graph_reserve: failed to allocate compute buffers
+```
+
+Faltaram 238 MiB, em ctx 32k. O `cpu_moe=16` e o `-ngl 16` do perfil vinham do Windows e **nunca
+foram validados no Linux** — o mesmo tipo de dívida que a varredura do `moe` já havia pago (+50 %
+de graça). Três combinações testadas, todas carregam:
+
+| ctx | `cpu_moe` | VRAM |
+|---|---|---|
+| 16.384 | 16 | 6.614 MiB |
+| 32.768 | **20** | **6.546 MiB** ← adotado |
+| 32.768 | 24 | 5.136 MiB |
+
+Lição de método: **`NAO_CARREGOU` não é veredito sobre o modelo.** Foi preciso ler o log do servidor
+para descobrir que era orçamento de VRAM, e não incompatibilidade. O `sweep_models.sh` já imprime as
+últimas linhas do log justamente por isso.
+
 ## 7y. CORREÇÃO IMPORTANTE: o gargalo era a ferramenta, não o insight
 
 Medido em 04/08/2026. A `timeline_midnight` — o bug não-local, o mais difícil das quatro — foi

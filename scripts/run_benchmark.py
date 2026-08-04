@@ -59,7 +59,11 @@ OUTPUT_DIR = PROJECT_ROOT / "benchmark-report"
 # Perfis a testar. `ctx` precisa acomodar a tarefa de contexto longo (~8.3k de
 # prompt) mais a resposta, senão o teste mede o orçamento e não o modelo.
 PROFILES = [
-    {"profile": "qwen27b", "name": "Qwen 3.6 27B",           "ctx": 16384},
+    # qwen27b fica FORA do default: 3.1 tok/s medidos, uma bateria completa passa
+    # de uma hora e o resultado ja e conhecido (denso de 15 GB nao cabe em 8 GB de
+    # VRAM). Continua rodavel por nome quando se quiser o contraste:
+    #     python3 scripts/run_benchmark.py qwen27b
+    # {"profile": "qwen27b", "name": "Qwen 3.6 27B",         "ctx": 16384},
     {"profile": "moe",     "name": "Qwen 3.6 35B-A3B MoE",   "ctx": 16384},
     {"profile": "deepseek","name": "DeepSeek Coder V2 Lite", "ctx": 16384},
     {"profile": "bonsai",  "name": "Bonsai 27B",             "ctx": 16384},

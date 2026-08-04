@@ -51,9 +51,9 @@ casas decimais.
 - [ ] **1.12** `free -m` mostra ~2.9 GB em swap de forma persistente durante o MoE, sem
       thrashing (`si`/`so` baixos). Investigar se é resíduo ou custo real — 16 GiB de RAM com
       12.5 GB de experts é aperto.
-- [ ] **1.10** **Decisão de arquitetura:** o `qwen27b` denso a 3.1 tok/s não é utilizável para
-      trabalho agêntico. Considerar removê-lo dos perfis ou marcá-lo como inviável nesta
-      máquina, para não desperdiçar rodadas de benchmark nele.
+- [x] **1.10** `qwen27b` marcado como inviável na descrição do perfil e **retirado da lista default**
+      do `run_benchmark.py` (continua rodável por nome). Não foi apagado: serve de contraste
+      didático — mesmo tamanho de arquivo que o MoE, 12× mais lento.
 
 ## Fase 2 — Instrumentação honesta do pipeline
 
@@ -79,14 +79,15 @@ Base pronta e validada contra o servidor real: [`scripts/bench_lib.py`](scripts/
 - [x] **2.8** `read_timeout` de 1800 s como teto absoluto **mais** `idle_timeout` de 180 s de
       silêncio entre tokens. É o segundo que distingue "modelo lento" de "stream morto"; um teto alto
       sozinho só faz o script travar meia hora antes de falhar.
-- [ ] **2.3** Warmup com prompt **distinto** do prompt medido. Hoje ele aquece o prompt cache e
-      todos os TTFT seguintes são cache hit. *(pendente: está no pipeline, não na lib)*
-- [ ] **2.7** `try/except` por modelo, com a falha registrada no relatório. O Bonsai falhou e deixou
-      `examples/landing-page-bonsai-27b/` vazio sem nenhuma linha de diagnóstico.
-- [ ] **2.9** Checar o código de retorno de `run_ssh` no `pull` e abortar o modelo se o download
-      falhou.
-- [ ] **2.10** Reescrever `run_moe_benchmark_pipeline.py` em cima de `bench_lib.py`, substituindo a
-      instrumentação antiga.
+- [x] **2.3** Warmup com prompt distinto (`WARMUP_PROMPT` em `run_benchmark.py`). O antigo aquecia
+      o prompt cache com o mesmo prompt e reportava o TTFT do cache hit como prefill real.
+- [x] **2.7** `try/except` por modelo com a falha e o log do servidor no relatório
+      (`run_benchmark.py`, `except ServerError`). O antigo não tinha, e o Bonsai falhou deixando
+      só um diretório vazio.
+- [x] **2.9** `ssh_checked()` em `bench_server.py` levanta em vez de engolir o erro. O antigo
+      descartava o retorno do `pull`, então download falhado passava em silêncio.
+- [x] **2.10** `run_benchmark.py` substituiu o pipeline antigo, que foi **removido** em 04/08.
+      Mantê-lo no repo só convidava a rodá-lo por engano; está no histórico do git.
 
 ### Decisão pendente sobre reasoning (não é bug, é escolha)
 
@@ -147,8 +148,7 @@ Desligá-lo para caber no orçamento troca a dimensão que interessa pela que n�
       `pass@k` estava errado — `pass@k` exige amostragem. O runner agora avisa quando
       `repeats > 1` com temperatura 0, e rotula a métrica como "taxa" em vez de "pass@k".
 
-- [ ] **3.11e** Rodar `timeline_midnight` com `--temperature 0.6 --repeats 5` para ter `pass@k`
-      de verdade. Talvez em 1 de 5 amostras ele escape do mínimo local.
+- [x] **3.11e** `pass@5` rodado. Com `write_file`: 1/5. Com `str_replace`: **4/5** — ver Fase 5.
 - [ ] **3.11f** Rodar a tarefa nos outros perfis (`agent` 8B, `deepseek`) para ver se o crédito
       parcial os separa. É o primeiro teste que pode ordenar modelos em vez de dar 100% a todos.
 
@@ -187,7 +187,12 @@ Landing page mede geração longa de boilerplate memorizado, sem contexto de ent
 calling. É quase o oposto de "corrigir bug em código existente". Rebaixar para smoke test e medir o
 que interessa.
 
-- [ ] **3.1** **Bug fix com teste falhando** — 10 a 15 tarefas dos próprios repos: teste vermelho +
+- [x] **3.1** **Bug fix com teste falhando** — resolvido melhor do que o planejado: em vez de
+      tarefas sintéticas, quatro fixtures de bugfix REAL do Beahub em `scripts/agentic_tasks/`,
+      multi-turno, com pytest/jest/vitest como critério. Ver Fase 5. Texto original abaixo, mantido
+      por contexto:
+
+      ~~**Bug fix com teste falhando** — 10 a 15 tarefas dos próprios repos: teste vermelho +
       arquivo relevante. Métrica `pass@1` / `pass@3`. Verde ou vermelho, sem juiz. É o eixo de maior
       valor: mede exatamente o objetivo declarado.
 - [ ] **3.2** **Aderência a formato de patch** — o search/replace ou diff unificado **aplica
@@ -207,6 +212,20 @@ que interessa.
       lance de dado — não distingue modelo de sorte.
 - [ ] **3.10** Parar de agregar num `overall_score` único a média de notas binárias 10-ou-4.
       Reportar os eixos separados, ou pesos explícitos e declarados.
+
+## Fase 0 — Bloqueios de ambiente
+
+- [ ] **0.1** **A máquina Linux está fora do ar** (04/08, manhã). Ping 100% de perda, SSH e HTTP
+      inacessíveis; o MAC ainda aparece no cache ARP, então caiu recentemente. Provável suspensão
+      depois que o teste noturno terminou e nada mais segurava o `systemd-inhibit` — ele só inibe
+      enquanto o processo do servidor vive. Tudo que precisa do modelo está bloqueado.
+- [ ] **0.2** Apagar o stub corrompido do `frontier`:
+      `~/.local/share/llm-server/models/DeepSeek-V4-Flash-0731-UD-IQ1_S-00001-of-00003.gguf` tem
+      **4 KB** em vez de 76 GB — download que falhou e deixou lixo (provável página de erro HTML).
+      O `pull` antigo não checava; a correção atual remove parcial em falha, mas este stub é
+      anterior. Precisa da máquina no ar.
+- [ ] **0.3** Considerar inibir suspensão de forma independente do servidor, ou aceitar que a
+      máquina dorme e documentar que é preciso acordá-la antes de rodar bateria longa.
 
 ## Fase 5 — Separar ganho de plano de ganho de ferramenta (PRIORIDADE)
 

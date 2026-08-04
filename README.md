@@ -225,8 +225,9 @@ benchmark-report/          saída da última execução
 examples/landing-page*/    amostras de saída (não são benchmark)
 ```
 
-O `scripts/run_moe_benchmark_pipeline.py` é o pipeline antigo. Continua no repo por
-referência, mas não use: os números dele estão errados pelos motivos acima.
+O pipeline antigo (`run_moe_benchmark_pipeline.py`) foi removido em 04/08/2026 — os números dele
+estavam errados pelos motivos acima e mantê-lo só convidava a rodá-lo por engano. Está no histórico
+do git se precisar consultar.
 
 ### Documentação
 

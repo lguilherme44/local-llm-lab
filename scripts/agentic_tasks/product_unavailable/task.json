@@ -1,0 +1,20 @@
+{
+  "key": "product_unavailable",
+  "modo": "worktree",
+  "origem": "beahub@d3372f6 — fix(sales): impede vender produto indisponivel no Caixa",
+  "por_que_esta_tarefa": [
+    "Escolhida como bug LOCAL de proposito, para contrastar com a timeline_midnight (nao-local).",
+    "Serve ao teste da ponta de cima da pipeline: o plano foi escrito sem ler o diff do commit. Ver PLANO_PRE_REGISTRADO_product_unavailable.md.",
+    "Predicao registrada antes de rodar: o modelo deve resolver SEM plano, porque a evidencia aponta direto para a correcao."
+  ],
+  "repo": "~/Desktop/Beahub/wk/beahub",
+  "commit": "d3372f6",
+  "cwd": "api",
+  "arquivo_alvo": "api/src/modules/sales/sales.service.ts",
+  "specs": ["api/src/modules/sales/sales.service.spec.ts"],
+  "link_node_modules": ["api"],
+  "somente_leitura": ["sales.service.spec.ts"],
+  "comando_teste": ["npx", "jest", "--silent", "--ci", "src/modules/sales/sales.service.spec.ts"],
+  "regex_placar": "Tests:.*?(\\d+) passed.*?(\\d+) total",
+  "prompt": "A suíte de testes deste projeto está falhando. Corrija o código para que todos os testes passem.\n\nContexto do bug: no Caixa é possível vender um produto marcado como indisponível. A tela de gestão lista produtos indisponíveis, então o front consegue tentar vendê-los — o backend precisa barrar.\n\nOs caminhos abaixo são relativos à raiz do diretório de trabalho:\n  • código a corrigir: `api/src/modules/sales/sales.service.ts`\n  • teste que falha (SOMENTE LEITURA): `api/src/modules/sales/sales.service.spec.ts`\n\nUse `read_file` com esses caminhos completos. Rode os testes para confirmar antes de terminar."
+}

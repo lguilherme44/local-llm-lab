@@ -121,9 +121,29 @@ def definir_tools() -> List[Dict[str, Any]]:
                      "description": "subdiretorio relativo; omita para a raiz"}}),
         fn("read_file", "Lê o conteúdo de um arquivo.",
            {"path": {"type": "string", "description": "nome do arquivo"}}, ["path"]),
-        fn("write_file", "Escreve o conteúdo completo de um arquivo.",
+        fn("write_file",
+           "Escreve o conteudo COMPLETO de um arquivo. Use apenas em arquivo "
+           "pequeno; para editar trecho de arquivo grande use str_replace.",
            {"path": {"type": "string"}, "content": {"type": "string"}},
            ["path", "content"]),
+        # Edicao cirurgica. Sem isto o modelo precisa reemitir o arquivo inteiro
+        # dentro de uma string JSON, e num arquivo de 528 linhas (~16 KB) isso
+        # estoura o max_tokens no meio da string: o llama.cpp devolve
+        # "Failed to parse tool call arguments as JSON ... missing closing quote"
+        # e a requisicao morre com HTTP 500. Foi o que invalidou as primeiras
+        # execucoes do booking_horizon.
+        #
+        # Tambem joga a favor de uma forca ja medida: no eixo patch_format o
+        # modelo emite search/replace correto 3/3.
+        fn("str_replace",
+           "Substitui uma ocorrencia exata de texto num arquivo. `old_str` "
+           "precisa aparecer EXATAMENTE UMA vez no arquivo, com a mesma "
+           "indentacao. Prefira este a write_file em arquivo grande.",
+           {"path": {"type": "string"},
+            "old_str": {"type": "string",
+                        "description": "texto exato a substituir, unico no arquivo"},
+            "new_str": {"type": "string", "description": "texto novo"}},
+           ["path", "old_str", "new_str"]),
         fn("run_tests", "Roda a suíte de testes e devolve a saída.", {}),
     ]
 
@@ -248,7 +268,12 @@ class Workspace:
         self.chamadas[nome] = self.chamadas.get(nome, 0) + 1
         try:
             if nome == "list_files":
-                raiz = self.raiz_confinamento
+                # resolve() nos DOIS lados: no macOS /var e symlink para
+                # /private/var, e comparar resolvido com nao-resolvido faz
+                # relative_to lancar. Isto quebrava list_files em TODA chamada
+                # no modo worktree — o modelo recebia string de excecao e ficava
+                # cego, gastando os turnos navegando as cegas.
+                raiz = self.raiz_confinamento.resolve()
                 sub = args.get("path") or "."
                 alvo = self._resolver(sub)
                 if alvo is None or not alvo.is_dir():
@@ -289,6 +314,34 @@ class Workspace:
                 alvo.write_text(conteudo, encoding="utf-8")
                 return f"escrito: {caminho} ({len(conteudo)} chars)"
 
+            if nome == "str_replace":
+                caminho = args.get("path", "")
+                alvo = self._resolver(caminho)
+                if alvo is None:
+                    return "caminho fora do diretório de trabalho"
+                if self._eh_somente_leitura(alvo, caminho):
+                    return (f"NEGADO: '{caminho}' é somente leitura. "
+                            f"Corrija {self.task.arquivo_alvo} em vez disso.")
+                if not alvo.exists():
+                    return f"arquivo não existe: {caminho}"
+                antigo = args.get("old_str")
+                novo = args.get("new_str")
+                if not isinstance(antigo, str) or not isinstance(novo, str):
+                    return "old_str e new_str são obrigatórios e devem ser string"
+                texto = alvo.read_text(encoding="utf-8")
+                n = texto.count(antigo)
+                # Exigir ocorrencia unica de proposito: substituir a primeira de
+                # varias e o modo classico de aplicar patch no lugar errado, e o
+                # erro fica invisivel ate o teste falhar por outro motivo.
+                if n == 0:
+                    return ("old_str não encontrado no arquivo. Leia o arquivo e "
+                            "copie o trecho exato, com a mesma indentação.")
+                if n > 1:
+                    return (f"old_str aparece {n} vezes; precisa ser único. "
+                            f"Inclua mais linhas de contexto para desambiguar.")
+                alvo.write_text(texto.replace(antigo, novo, 1), encoding="utf-8")
+                return f"substituído em {caminho} ({len(antigo)} → {len(novo)} chars)"
+
             if nome == "run_tests":
                 ok, saida = self.rodar_testes()
                 cab = "TODOS OS TESTES PASSARAM\n" if ok else "AINDA FALHANDO\n"
@@ -306,8 +359,8 @@ class Workspace:
         resolvida, via relative_to, que não se engana com `..` nem com prefixo
         parecido (`/tmp/x` vs `/tmp/x-outro`).
         """
-        raiz = self.raiz_confinamento.resolve()
         try:
+            raiz = self.raiz_confinamento.resolve()
             alvo = (raiz / rel).resolve()
             alvo.relative_to(raiz)
             return alvo
@@ -319,7 +372,7 @@ class Workspace:
 
 def uma_tentativa(task: Task, url: str, modelo: str, api_key: str,
                   max_turnos: int, verbose: bool, temperatura: float = 0.0,
-                  manter: bool = False) -> Dict[str, Any]:
+                  manter: bool = False, max_tokens: int = 8192) -> Dict[str, Any]:
     ws = Workspace(task)
     inicio = time.time()
     resultado: Dict[str, Any] = {
@@ -349,7 +402,7 @@ def uma_tentativa(task: Task, url: str, modelo: str, api_key: str,
             resultado["turnos"] = turno
             corpo = json.dumps({"model": modelo, "messages": msgs, "tools": tools,
                                 "tool_choice": "auto", "temperature": temperatura,
-                                "max_tokens": 4096}).encode("utf-8")
+                                "max_tokens": max_tokens}).encode("utf-8")
             headers = {"Content-Type": "application/json"}
             if api_key:
                 headers["Authorization"] = f"Bearer {api_key}"
@@ -436,6 +489,9 @@ def main() -> int:
     # primeiras execucoes desta tarefa deram 11115 tokens exatos as tres vezes.
     # pass@k exige amostragem, entao repeats > 1 com temp 0 nao mede nada novo.
     ap.add_argument("--temperature", type=float, default=0.0)
+    ap.add_argument("--max-tokens", type=int, default=8192,
+                    help="teto por resposta. Baixo demais trunca a tool call no "
+                         "meio da string JSON e o servidor devolve 500")
     ap.add_argument("--manter", action="store_true",
                     help="nao apaga o workspace, para inspecionar o que o modelo escreveu")
     ap.add_argument("-q", "--quiet", action="store_true")
@@ -468,7 +524,7 @@ def main() -> int:
             print(f"--- tentativa {i}/{a.repeats}")
         r = uma_tentativa(task, url, a.modelo, api_key, a.max_turnos,
                           verbose=not a.quiet, temperatura=a.temperature,
-                          manter=a.manter)
+                          manter=a.manter, max_tokens=a.max_tokens)
         execucoes.append(r)
         marca = "APROVADO" if r["passou"] else "REPROVADO"
         extra = "  ⚠️ tentou editar o teste" if r["tentou_editar_teste"] else ""

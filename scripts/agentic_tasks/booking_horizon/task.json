@@ -12,13 +12,23 @@
   "commit": "aeb5194",
   "cwd": "api",
   "arquivo_alvo": "api/src/modules/availability/availability.service.ts",
-  "specs": ["api/src/modules/availability/availability.service.spec.ts"],
-  "link_node_modules": ["api"],
-  "somente_leitura": ["availability.service.spec.ts"],
+  "specs": [
+    "api/src/modules/availability/availability.service.spec.ts"
+  ],
+  "link_node_modules": [
+    "api"
+  ],
+  "somente_leitura": [
+    "availability.service.spec.ts"
+  ],
   "comando_teste": [
-    "npx", "jest", "--silent", "--ci",
+    "npx",
+    "jest",
+    "--silent",
+    "--ci",
     "src/modules/availability/availability.service.spec.ts"
   ],
   "regex_placar": "Tests:.*?(\\d+) passed.*?(\\d+) total",
-  "prompt": "A suíte de testes deste projeto está falhando. Corrija o código para que todos os testes passem.\n\nContexto do bug: o horizonte de agendamento (`bookingHorizonDays`) é configurável no Settings da barbearia, mas só surte efeito no auto-atendimento pelo chatbot. As telas do staff continuam mostrando uma janela fixa, ignorando a configuração.\n\nO teste que falha está em `src/modules/availability/availability.service.spec.ts`. Ele é somente leitura — corrija o código de produção. Use as ferramentas para investigar e rode os testes para confirmar antes de terminar."
+  "prompt": "A suíte de testes deste projeto está falhando. Corrija o código para que todos os testes passem.\n\nContexto do bug: o horizonte de agendamento (`bookingHorizonDays`) é configurável no Settings da barbearia, mas só surte efeito no auto-atendimento pelo chatbot. As telas do staff continuam mostrando uma janela fixa, ignorando a configuração.\n\nOs caminhos abaixo são relativos à raiz do diretório de trabalho:\n  • código a corrigir: `api/src/modules/availability/availability.service.ts`\n  • teste que falha (SOMENTE LEITURA): `api/src/modules/availability/availability.service.spec.ts`\n\nUse `read_file` com esses caminhos completos. Rode os testes para confirmar antes de terminar.",
+  "nota_sobre_caminhos": "As ferramentas resolvem a partir da raiz do worktree (monorepo), enquanto o comando de teste roda em `cwd: api`. O prompt precisa usar caminhos relativos a RAIZ, senao o modelo procura no lugar errado — foi o que invalidou a primeira execucao."
 }

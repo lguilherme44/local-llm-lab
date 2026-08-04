@@ -218,6 +218,33 @@ instrumento em vez do modelo?**
 - **Landing page não é benchmark.** Fica como amostra em `examples/`. Serve de smoke test de
   "produz saída longa sem quebrar" e nada além.
 
+## 7a. O desenho das ferramentas decide a viabilidade
+
+Descoberto ao construir as tarefas de worktree, e vale mais que qualquer número de tok/s.
+
+A primeira versão do runner só oferecia `write_file`, que exige o **conteúdo completo** do arquivo.
+No `booking_horizon` o arquivo tem 528 linhas (~16 KB) e as três execuções morreram assim:
+
+```
+HTTP 500 — Failed to parse tool call arguments as JSON:
+  parse error at column 16046: invalid string: missing closing quote
+```
+
+O modelo tentou reemitir o arquivo inteiro dentro de uma string JSON e bateu no `max_tokens` no
+meio da string. O llama.cpp recebeu JSON truncado e devolveu 500.
+
+**Não era limitação do modelo, era da ferramenta que eu dei.** Corrigido com `str_replace`
+(`old_str` → `new_str`, exigindo ocorrência única), que é o que ferramentas reais usam. E joga a
+favor de uma força já medida: no eixo `patch_format` o modelo emite search/replace correto 3/3.
+
+Consequência para a pipeline: **modelo local não reescreve arquivo grande.** Se o executor só
+tiver `write_file`, ele falha em qualquer arquivo real por motivo que nada tem a ver com
+capacidade de programar. Edição cirúrgica não é otimização, é requisito.
+
+A exigência de ocorrência única no `str_replace` também é deliberada: substituir a primeira de
+várias é o modo clássico de aplicar patch no lugar errado, e o erro fica invisível até o teste
+falhar por outro motivo.
+
 ## 7b. A pipeline "grande planeja, local executa"
 
 Ideia em avaliação: usar modelo grande para planejar e o local para executar, cortando custo de

@@ -70,6 +70,38 @@ As duas primeiras estão **no teto** e não medem mais nada: quando o baseline a
 para saber se uma mudança melhorou. A terceira é a que tem resolução, e foi construída nesta
 sessão.
 
+### O achado mais importante: ele mente sobre ter terminado
+
+`pass@5` com amostragem (`--temperature 0.6 --repeats 5`) na `timeline_midnight`:
+
+| # | resultado | placar | turnos | tokens |
+|---|---|---|---|---|
+| 1 | REPROVADO — desistiu | 3/5 → 4/5 | 14 | 12.971 |
+| 2 | REPROVADO — desistiu | 3/5 → 4/5 | 10 | 10.666 |
+| 3 | **APROVADO** | **3/5 → 5/5** | 11 | **6.964** |
+| 4 | REPROVADO — teto de turnos | 3/5 → 4/5 | 14 | 10.028 |
+| 5 | REPROVADO — desistiu | 3/5 → 4/5 | 9 | 7.624 |
+
+**`pass@5 = 1/5`.** Com amostragem ele resolve às vezes — não é incapacidade, é 20 % de acerto.
+
+Dois padrões que valem mais que o número:
+
+1. **Três das quatro falhas foram ele declarando vitória com a suíte vermelha.** O motivo
+   registrado é *"terminou sem chamar ferramenta; suíte vermelha"*: parou de agir e respondeu em
+   prosa como se tivesse concluído. Só uma falha foi honesta (bateu no teto).
+
+   Consequência prática, e é dura: **numa pipeline o modelo local vai afirmar que terminou e
+   estar errado em ~60 % das tentativas desta tarefa.** Teste como gate não é opcional — se você
+   confiar no relato dele, recebe código quebrado com aparência de pronto. O `bench_agentic.py`
+   só detecta porque roda o teste depois, ignorando o que o modelo diz.
+
+2. **A tentativa que acertou foi a mais barata**: 6.964 tokens contra 10-13 mil das que falharam.
+   Quando acha o caminho, acha rápido. Serve como sinal de escalonamento: passou de ~8k tokens
+   sem ficar verde, provavelmente não vai ficar.
+
+Isto corrige uma leitura anterior: com temperatura 0 parecia "mínimo local sempre no mesmo
+ponto". Com amostragem o quadro é outro — ele **desiste cedo** em 3 de 5 amostras.
+
 ### Por que a `timeline_midnight` funciona como avaliador
 
 Vem de um bugfix real (`beahub@69d3177`). Um corte às 23:30 termina em `"00:00"`, aparece nos cards
@@ -185,6 +217,37 @@ instrumento em vez do modelo?**
   o harness.
 - **Landing page não é benchmark.** Fica como amostra em `examples/`. Serve de smoke test de
   "produz saída longa sem quebrar" e nada além.
+
+## 7b. A pipeline "grande planeja, local executa"
+
+Ideia em avaliação: usar modelo grande para planejar e o local para executar, cortando custo de
+token. O que se sabe até agora:
+
+**A favor.** A falha observada na `timeline_midnight` é de **insight**, não de execução: o modelo
+acerta a causa raiz e perde a consequência. Insight é exatamente o que o planejador supre. E a
+parte mecânica ele faz bem — `patch_format` 3/3, loop de ferramentas limpo.
+
+**Contra, e é o risco central.** Ele declara vitória com a suíte vermelha em 3 de 5 amostras. Sem
+teste como gate, a pipeline entrega código quebrado que *parece* pronto.
+
+**Desenho que os dados sugerem**, se for adiante:
+- modelo grande produz o plano
+- local executa em worktree isolado
+- **teste é o juiz, nunca o relato do modelo**
+- escalona para o grande em ~8k tokens sem ficar verde, ou em 2 rodadas sem melhorar o placar
+
+**Experimento em curso:** `timeline_midnight_planned` é a mesma tarefa com o plano injetado no
+prompt — único elemento diferente. Se o `pass@5` subir de 1/5 para perto de 5/5, a hipótese está
+validada.
+
+**Viés a declarar:** o plano foi escrito por quem já sabia a resposta (derivado da mensagem do
+commit). Um planejador real veria só o teste falhando. O resultado é o **limite superior** da
+pipeline, não a expectativa. Se der verde, o próximo teste honesto é gerar o plano com um modelo
+grande sem acesso ao fix, e ver se ele produz plano dessa qualidade.
+
+**Não medido:** o custo real. Nem do modelo grande com prompt caching, nem qual fração do trabalho
+cai na fatia delegável. Pode ser que a fração seja pequena o suficiente para não valer manter duas
+engines.
 
 ## 8. Pendências imediatas
 

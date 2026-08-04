@@ -1,0 +1,30 @@
+{
+  "key": "timeline_midnight_planned",
+  "origem": "beahub@69d3177 — a MESMA tarefa de timeline_midnight, com plano injetado no prompt",
+  "por_que_esta_tarefa": [
+    "Braço B de um A/B contra `timeline_midnight`. Único elemento diferente: o prompt traz o plano.",
+    "Testa a hipótese da pipeline 'modelo grande planeja, modelo local executa'. Sem reasoning, sem mudança de config, sem mudança de fixture.",
+    "O modelo sozinho reprova 0/3 na versão sem plano, com crédito parcial 3/5 → 4/5: acerta a causa e perde a consequência. Isso é falha de INSIGHT, e insight é o que o planejador fornece.",
+    "Se der 3/3 aqui, a pipeline está validada com dado. Se continuar reprovando, o gargalo é execução e a pipeline não resolve."
+  ],
+  "arquivo_alvo": "timeline.utils.ts",
+  "somente_leitura": [
+    "timeline.utils.spec.ts",
+    "harness.ts",
+    "run-tests.ts",
+    "task.json"
+  ],
+  "comando_teste": [
+    "node",
+    "--experimental-strip-types",
+    "--no-warnings",
+    "run-tests.ts"
+  ],
+  "esperado_no_inicio": {
+    "passam": 3,
+    "total": 5
+  },
+  "regex_placar": "(\\d+) passaram, \\d+ falharam, de (\\d+)",
+  "nota_sobre_o_plano": "O plano descreve O QUE fazer e POR QUÊ, sem código. É o nível de especificidade que um planejador competente produz depois de ler o teste que falha e o arquivo — deliberadamente não inclui a implementação, senão o teste mediria transcrição em vez de execução.",
+  "prompt": "A suíte de testes deste diretório está falhando. Corrija o código para que todos os testes passem.\n\nContexto: um agendamento de barbearia que termina à meia-noite (por exemplo, um corte às 23:30 que termina em \"00:00\") aparece na visão de cards, mas desaparece da timeline do dia.\n\nJá investiguei a causa. Siga este plano:\n\n1. Um horário de FIM igual a \"00:00\" significa fim-do-dia (1440 minutos), não zero. Hoje ele é lido como 0, o que faz o intervalo parecer terminar antes de começar. Crie uma função separada para converter horário de fim, distinta da que converte horário de início, e use-a nos três lugares que interpretam um fim: os dois lados da checagem de sobreposição e o fim do horário de funcionamento.\n\n2. Como agora existe o valor 1440, a função que converte minutos de volta para \"HH:MM\" precisa tratá-lo — 1440 deve renderizar como \"00:00\", não \"24:00\".\n\n3. Isto é o passo que falta com mais frequência: além de interpretar meia-noite corretamente, a grade de slots precisa COBRIR todo agendamento, inclusive um que comece exatamente no horário de fechamento ou fora do horário de funcionamento. Hoje a grade vai do início ao fim do expediente e por isso nunca cria o slot das 23:30. Expanda a janela da grade para abranger o menor início e o maior fim entre os agendamentos, mantendo o alinhamento com o início do expediente para que os slots normais preservem as bordas :00/:30. Slots fora do expediente não estão na lista de disponíveis, então serão classificados como ocupados — isso é o esperado.\n\nSó o arquivo `timeline.utils.ts` pode ser modificado — o arquivo de teste é somente leitura. Rode os testes para confirmar antes de terminar."
+}

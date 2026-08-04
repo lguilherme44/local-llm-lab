@@ -1,7 +1,7 @@
 # STATUS — onde o projeto está e por quê
 
 Handoff para retomar em outra sessão sem perder contexto.
-Última atualização: 2026-08-03.
+Última atualização: 2026-08-04.
 
 Documentos vizinhos, e quando ler cada um:
 
@@ -61,14 +61,23 @@ Este é o estado do problema hoje.
 
 | avaliador | resultado do `moe` | serve para |
 |---|---|---|
-| `scripts/run_benchmark.py` (6 eixos, single-shot) | 18/18 | dizer "o modelo serve" ✓ |
-| `scripts/test-feature.py` (Cache com TTL) | 5/5, determinístico | idem ✓ |
-| `scripts/bench_agentic.py timeline_midnight` | **0/3, `3/5 → 4/5`** | **comparar de fato** ✓ |
-| `scripts/bench_agentic.py booking_horizon` | nunca rodado | — |
+| `run_benchmark.py` (6 eixos, single-shot) | 18/18 | dizer "o modelo serve" ✓ |
+| `test-feature.py` (Cache com TTL) | 5/5, determinístico | idem ✓ |
+| `bench_agentic.py timeline_midnight` | **4/5** sem plano, 5/5 com | **comparar de fato** ✓ |
+| `bench_agentic.py product_unavailable` | 3/3 | ✓ |
+| `bench_agentic.py booking_horizon` | 3/3 | ✓ |
+| `bench_agentic.py pwa_ios_starturl` | 3/3 | ✓ |
 
 As duas primeiras estão **no teto** e não medem mais nada: quando o baseline acerta tudo, não dá
-para saber se uma mudança melhorou. A terceira é a que tem resolução, e foi construída nesta
-sessão.
+para saber se uma mudança melhorou.
+
+As quatro últimas vêm de bugfixes reais do Beahub e são as que têm resolução — com uma ressalva:
+depois de dar `str_replace` ao modelo, três delas também subiram para 3/3 e a quarta para 4/5. **A
+suíte está começando a saturar de novo.** Ver seção 7y para o que isso significa, e o `TODO.md`
+para o que ainda erra.
+
+> ⚠️ **Cuidado ao ler números antigos neste arquivo.** As seções abaixo preservam medições feitas
+> quando o modelo só tinha `write_file`. Onde houver conflito, valem a seção 7y e a 7z.
 
 ### O achado mais importante: ele mente sobre ter terminado
 

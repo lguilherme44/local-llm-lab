@@ -67,10 +67,20 @@ for perfil in "${PERFIS[@]}"; do
   echo "  cmdline: $cmdline"
   [[ -n "$arq" ]] && echo "$arq" | sd '^' '  meta: '
 
-  # tok/s de referência, para cruzar velocidade com acerto
-  tps=$(ssh_run "cd ~/local-llm-lab && ./linux/llm-server.sh bench 3 2>&1 | grep -A1 'Geração:' | head -1" \
-        | grep -oE '[0-9]+\.[0-9]+' | head -1)
-  echo "  geração: ${tps:-?} tok/s"
+  # tok/s de referência, para cruzar velocidade com acerto.
+  #
+  # ATENÇÃO na extração: o `bench` imprime "Geração:" TAMBÉM em cada linha de
+  # rodada, e nessa linha o primeiro decimal é o Prefill:
+  #
+  #   [Rodada 1/3] Prefill: 9.3 tok/s | Geração: 2.7 tok/s | Tempo: 192.81s
+  #
+  # Pegar "o primeiro numero depois de Geração:" devolvia o prefill — o `agent`
+  # apareceu com 276 tok/s de "geração" quando o real é 73. A linha do resumo é
+  # a unica que começa com espaços + "Geração:", sem prefixo de rodada.
+  ssh_run "cd ~/local-llm-lab && ./linux/llm-server.sh bench 3" > /tmp/sweep_bench_$perfil.log 2>&1
+  tps=$(rg -o '^\s+Geração:\s+([0-9.]+)' -r '$1' /tmp/sweep_bench_$perfil.log | tail -1)
+  pfl=$(rg -o '^\s+Prefill:\s+([0-9.]+)' -r '$1' /tmp/sweep_bench_$perfil.log | tail -1)
+  echo "  geração: ${tps:-?} tok/s | prefill: ${pfl:-?} tok/s"
 
   for tarefa in $TASKS; do
     printf '  %-22s ' "$tarefa"

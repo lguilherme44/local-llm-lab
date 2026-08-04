@@ -215,17 +215,21 @@ que interessa.
 
 ## Fase 0 — Bloqueios de ambiente
 
-- [ ] **0.1** **A máquina Linux está fora do ar** (04/08, manhã). Ping 100% de perda, SSH e HTTP
-      inacessíveis; o MAC ainda aparece no cache ARP, então caiu recentemente. Provável suspensão
-      depois que o teste noturno terminou e nada mais segurava o `systemd-inhibit` — ele só inibe
-      enquanto o processo do servidor vive. Tudo que precisa do modelo está bloqueado.
+- [x] **0.1** ~~Máquina Linux fora do ar~~ — **era a VPN do lado do Mac**, não a máquina. O
+      diagnóstico "provável suspensão" estava errado: o servidor nunca caiu.
+
+      Lição para o próximo diagnóstico: eu checei ping, SSH, HTTP e ARP, e confirmei que estava na
+      sub-rede certa (`192.168.3.69`) — mas nada disso distingue "o alvo caiu" de "a minha rota
+      mudou". Uma VPN reescreve a rota mesmo com o IP local intacto. O teste que faltava era
+      `route get 192.168.3.51` ou `scutil --nc list`, não mais provas de que o alvo não responde.
 - [ ] **0.2** Apagar o stub corrompido do `frontier`:
       `~/.local/share/llm-server/models/DeepSeek-V4-Flash-0731-UD-IQ1_S-00001-of-00003.gguf` tem
       **4 KB** em vez de 76 GB — download que falhou e deixou lixo (provável página de erro HTML).
       O `pull` antigo não checava; a correção atual remove parcial em falha, mas este stub é
       anterior. Precisa da máquina no ar.
-- [ ] **0.3** Considerar inibir suspensão de forma independente do servidor, ou aceitar que a
-      máquina dorme e documentar que é preciso acordá-la antes de rodar bateria longa.
+- [ ] **0.3** Adicionar checagem de rota/VPN ao diagnóstico do `bench_agentic.py`: quando a
+      requisição falhar com `Network is unreachable`, sugerir VPN antes de sugerir máquina caída.
+      Custou uma rodada de diagnóstico errado.
 
 ## Fase 5 — Separar ganho de plano de ganho de ferramenta (PRIORIDADE)
 

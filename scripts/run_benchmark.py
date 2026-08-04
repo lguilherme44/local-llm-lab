@@ -67,7 +67,7 @@ PROFILES = [
     {"profile": "moe",     "name": "Qwen 3.6 35B-A3B MoE",   "ctx": 16384},
     {"profile": "deepseek","name": "DeepSeek Coder V2 Lite", "ctx": 16384},
     {"profile": "bonsai",  "name": "Bonsai 27B",             "ctx": 16384},
-    {"profile": "agent",   "name": "Qwen3 8B (baseline)",    "ctx": 16384},
+    {"profile": "chat8b",  "name": "Qwen3 8B (nao-agente)",    "ctx": 16384},
 ]
 
 # Prompt de warmup DIFERENTE do prompt medido.

@@ -44,7 +44,11 @@ if command -v systemd-inhibit &>/dev/null; then
 fi
 
 PORT="${LLM_PORT:-8080}"
-DEFAULT_PROFILE="agent"
+# O default era `agent` (Qwen3 8B) — o pior dos tres medidos em trabalho
+# agentico, e o unico que PIOROU codigo (quebrou 4 testes que passavam na
+# fixture pwa_ios_starturl). Quem rodasse `./llm-server.sh start` sem argumento
+# recebia exatamente o destrutivo.
+DEFAULT_PROFILE="moe"
 API_KEY="local"
 
 # ─── tratamento de argumentos e flag --lan ─────────────────────────────────────
@@ -161,13 +165,13 @@ fi
 
 get_profiles() {
   cat <<'EOF'
-agent|Qwen/Qwen3-8B-GGUF|Q4_K_M|5.03|16384|6.24|0.5|0|auto|sim||--reasoning off|Qwen3 8B. Tool calling validado (ciclo completo). ~73 tok/s de geracao nesta 3060 Ti. Padrao.
+chat8b|Qwen/Qwen3-8B-GGUF|Q4_K_M|5.03|16384|6.24|0.5|0|auto|nao-confiavel||--reasoning off|Qwen3 8B, 73.6 tok/s, o unico que cabe INTEIRO na VRAM (98% de uso de GPU). NAO USE COMO AGENTE: 1/8 nas fixtures de bug real e PIOROU o codigo numa delas (5/8 -> 1/8, quebrou 4 testes que passavam). Emite tool call, mas nao progride: chamou list_files 5x e desistiu. Serve para pergunta rapida, mensagem de commit, autocomplete. Chamava-se `agent`, nome trocado em 04/08 porque prometia o que nao entrega.
 fast|Qwen/Qwen2.5-Coder-7B-Instruct-GGUF|Q4_K_M|4.30|16384|5.40|0.5|0|auto|nao|||Qwen2.5 Coder 7B. Especialista em código puro, ~80 tok/s. Não serve como agente.
 moe|unsloth/Qwen3.6-35B-A3B-GGUF|UD-IQ4_NL|16.80|16384|7.10|12.5|30|99|sim|Qwen3.6-35B-A3B-UD-IQ4_NL.gguf|--reasoning off|Qwen3.6 35B MoE (3B ativos). 37.7 tok/s medidos sob CUDA com ngl 99 + cpu_moe 30. Melhor custo-beneficio nesta maquina.
-qwen27b|unsloth/Qwen3.6-27B-MTP-GGUF|IQ4_NL|15.22|16384|7.00|10.0|24|24|sim|Qwen3.6-27B-IQ4_NL.gguf||INVIAVEL nesta maquina: 3.1 tok/s medidos sob CUDA. 15.22 GB densos nao cabem em 8 GB de VRAM, entao ~9 GB rodam na CPU e a GPU fica a 17%. Mantido apenas como contraste didatico contra o MoE.
-bonsai|prism-ml/Bonsai-27B-gguf|Q1_0|3.80|16384|5.00|1.0|0|auto|sim|Bonsai-27B-Q1_0.gguf||NAO FUNCIONA com llama.cpp padrao: o quant Q1_0_g128 exige o fork da PrismML. Ver TODO 6.x. O arquivo antes referenciado aqui (dspark-bf16) era o DRAFTER de 3.6B e 6 camadas, nao o modelo.
-deepseek|bartowski/DeepSeek-Coder-V2-Lite-Instruct-GGUF|Q4_K_M|9.11|16384|6.55|6.0|20|16|sim|DeepSeek-Coder-V2-Lite-Instruct-Q4_K_M.gguf||DeepSeek Coder V2 Lite 16B MoE. ngl 16 + cpu_moe 20 validado em ctx 32k: 28.4 tok/s, 6.5 GB VRAM. NAO suba o ngl: o KV cache deste modelo pede 4.6 GB em 32k, e ngl 24 ja estoura.
-frontier|unsloth/DeepSeek-V4-Flash-0731-GGUF|UD-IQ1_S|76.87|8192|7.00|15.0|128|128|sim|DeepSeek-V4-Flash-0731-UD-IQ1_S-00001-of-00003.gguf||DeepSeek V4 Flash Frontier MoE (76.8 GB). Experimento de qualidade máxima via mmap/SSD.
+qwen27b|unsloth/Qwen3.6-27B-MTP-GGUF|IQ4_NL|15.22|16384|7.00|10.0|24|24|?|Qwen3.6-27B-IQ4_NL.gguf||INVIAVEL e peso APAGADO (04/08). 3.1 tok/s medidos sob CUDA: 15.22 GB densos nao cabem em 8 GB de VRAM, ~9 GB rodam na CPU e a GPU fica a 17%. Mantido na tabela so para documentar o contraste com o MoE de tamanho parecido, que da 37.7.
+bonsai|prism-ml/Bonsai-27B-gguf|Q1_0|3.80|16384|5.00|1.0|0|auto|?|Bonsai-27B-Q1_0.gguf||NUNCA RODOU e sem peso em disco (04/08). O quant Q1_0_g128 exige o fork da PrismML do llama.cpp; o padrao nao le. O arquivo que estava baixado (dspark-bf16, 6.9 GB) era o DRAFTER de 3.6B e 6 camadas, nao o modelo — apagado. Ver TODO fase 6.
+deepseek|bartowski/DeepSeek-Coder-V2-Lite-Instruct-GGUF|Q4_K_M|9.11|16384|6.55|6.0|20|16|nao|DeepSeek-Coder-V2-Lite-Instruct-Q4_K_M.gguf||REPROVADO e peso APAGADO (04/08). NAO faz tool calling: 0/8 nas fixtures de bug real, chamadas={} em turno 1 nas oito execucoes. Declarava tools|sim sem nunca ter sido validado. Rodava a 28.4 tok/s com ngl 16 + cpu_moe 20 em ctx 32k.
+frontier|unsloth/DeepSeek-V4-Flash-0731-GGUF|UD-IQ1_S|82.50|8192|7.00|15.0|128|128|?|DeepSeek-V4-Flash-0731-UD-IQ1_S-00001-of-00003.gguf||INVIAVEL: 304 B de parametros, 82.5 GB no menor quant, numa placa de 8 GB e 16 GB de RAM. Rodaria por streaming de SSD — o qwen27b com 15 GB ja da 3.1 tok/s. O arquivo em disco era um stub de 4 KB (download falho), apagado em 04/08. Mantido na tabela so para documentar por que nao vale.
 quality|bartowski/gemma-4-12B-it-GGUF|Q4_K_M|7.30|8192|7.80|1.0|0|auto|sim|||Gemma 4 12B. Aceita imagens e texto. Exige liberar VRAM para rodar liso.
 tiny|Qwen/Qwen2.5-Coder-3B-Instruct-GGUF|Q4_K_M|2.00|16384|2.90|0.3|0|auto|nao|||Qwen2.5 Coder 3B. Leve, ~110 tok/s. Ótimo para autocompletar e testes rápidos.
 EOF

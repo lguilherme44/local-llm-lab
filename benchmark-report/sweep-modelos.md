@@ -7,6 +7,6 @@ automatizado do próprio commit — verde ou vermelho, sem juiz.
 
 | perfil | tok/s | timeline_midnight | product_unavailable | booking_horizon | pwa_ios_starturl |
 |---|---|
-| `deepseek` | — | NAO_CARREGOU | NAO_CARREGOU | NAO_CARREGOU | NAO_CARREGOU |
+| `deepseek` | 28.4 | 0/2 | 0/2 | 0/2 | 0/2 |
 
 Detalhe por execução em `/tmp/sweep_<perfil>_<tarefa>.log`.

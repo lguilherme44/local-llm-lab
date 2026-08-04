@@ -60,6 +60,28 @@ class Task:
     # mais importa: 3/5 -> 4/5 é progresso real e mensurável.
     regex_placar: str = ""
 
+    # ─ modo worktree ─
+    # Vendorizar (copiar arquivos para agentic_tasks/<nome>/) só é barato quando
+    # o bug cabe num arquivo puro sem imports. Dos 300 commits varridos do
+    # Beahub, 20 tinham teste no proprio commit e só UM era assim.
+    #
+    # No modo worktree a tarefa aponta para o repo real: cria-se um git worktree
+    # em <commit>^ (estado bugado), restaura-se o spec da versao pos-fix, e
+    # roda-se o teste com o node_modules do repo linkado. Custo por tarefa cai
+    # para escrever um task.json, e tarefa multi-arquivo passa a ser viavel.
+    #
+    # Preco: depende do repo estar presente. Assumido de proposito — sao tarefas
+    # do proprio codigo do usuario, para os modelos do proprio usuario.
+    repo: str = ""
+    commit: str = ""
+    specs: List[str] = field(default_factory=list)
+    cwd: str = ""
+    link_node_modules: List[str] = field(default_factory=list)
+
+    @property
+    def modo_worktree(self) -> bool:
+        return bool(self.repo and self.commit)
+
     @classmethod
     def carregar(cls, nome: str) -> "Task":
         d = TASKS_DIR / nome
@@ -75,6 +97,11 @@ class Task:
             origem=cfg.get("origem", ""),
             esperado_no_inicio=cfg.get("esperado_no_inicio", {}),
             regex_placar=cfg.get("regex_placar", ""),
+            repo=os.path.expanduser(cfg.get("repo", "")),
+            commit=cfg.get("commit", ""),
+            specs=cfg.get("specs", []),
+            cwd=cfg.get("cwd", ""),
+            link_node_modules=cfg.get("link_node_modules", []),
         )
 
 
@@ -89,7 +116,9 @@ def definir_tools() -> List[Dict[str, Any]]:
                            "required": obrig or []}}}
 
     return [
-        fn("list_files", "Lista os arquivos do diretório de trabalho.", {}),
+        fn("list_files", "Lista arquivos. Opcionalmente de um subdiretorio.",
+           {"path": {"type": "string",
+                     "description": "subdiretorio relativo; omita para a raiz"}}),
         fn("read_file", "Lê o conteúdo de um arquivo.",
            {"path": {"type": "string", "description": "nome do arquivo"}}, ["path"]),
         fn("write_file", "Escreve o conteúdo completo de um arquivo.",
@@ -108,14 +137,91 @@ class Workspace:
 
     def __init__(self, task: Task):
         self.task = task
-        self.dir = Path(tempfile.mkdtemp(prefix=f"agentic-{task.key}-"))
-        for item in task.dir.iterdir():
-            if item.is_file():
-                shutil.copy2(item, self.dir / item.name)
         self.chamadas: Dict[str, int] = {}
+        self._worktree: Optional[Path] = None
+        if task.modo_worktree:
+            self.dir = self._montar_worktree()
+        else:
+            self.dir = Path(tempfile.mkdtemp(prefix=f"agentic-{task.key}-"))
+            for item in task.dir.iterdir():
+                if item.is_file():
+                    shutil.copy2(item, self.dir / item.name)
+
+    # ─── modo worktree ──────────────────────────────────────────────────────────
+
+    def _git(self, *args: str, cwd: Optional[Path] = None) -> str:
+        p = subprocess.run(["git", *args], cwd=str(cwd or self.task.repo),
+                           capture_output=True, text=True, timeout=300)
+        if p.returncode != 0:
+            raise RuntimeError(f"git {' '.join(args)} falhou: {p.stderr.strip()[:400]}")
+        return p.stdout.strip()
+
+    def _montar_worktree(self) -> Path:
+        t = self.task
+        repo = Path(t.repo)
+        if not (repo / ".git").exists():
+            raise RuntimeError(
+                f"repo nao encontrado ou nao e git: {repo}\n"
+                f"    Esta tarefa roda no modo worktree e precisa do repo local.")
+
+        # --detach evita criar branch e nao mexe em nada que o usuario tenha
+        # aberto. O destino fica em tempdir, nunca dentro do repo dele.
+        base = Path(tempfile.mkdtemp(prefix=f"agentic-wt-{t.key}-"))
+        alvo = base / "wt"
+        self._worktree = alvo
+        self._git("worktree", "add", "--detach", str(alvo), f"{t.commit}^")
+
+        # Traz os arquivos de teste da versao POS-fix. O codigo fica no estado
+        # bugado (commit^); so o teste avanca. E isso que cria o vermelho.
+        if t.specs:
+            self._git("checkout", t.commit, "--", *t.specs, cwd=alvo)
+
+        # node_modules por symlink: sao centenas de MB por pacote (527 e 609 no
+        # Beahub); copiar por tentativa seria inviavel. Symlink e somente-leitura
+        # na pratica porque o modelo so escreve no arquivo alvo.
+        for rel in t.link_node_modules:
+            origem = repo / rel / "node_modules"
+            destino = alvo / rel / "node_modules"
+            if origem.is_dir() and not destino.exists():
+                destino.parent.mkdir(parents=True, exist_ok=True)
+                destino.symlink_to(origem, target_is_directory=True)
+
+        return alvo / t.cwd if t.cwd else alvo
 
     def limpar(self) -> None:
-        shutil.rmtree(self.dir, ignore_errors=True)
+        if self._worktree is not None:
+            try:
+                self._git("worktree", "remove", "--force", str(self._worktree))
+            except Exception:                                # noqa: BLE001
+                shutil.rmtree(self._worktree, ignore_errors=True)
+                try:
+                    self._git("worktree", "prune")
+                except Exception:                            # noqa: BLE001
+                    pass
+            shutil.rmtree(self._worktree.parent, ignore_errors=True)
+        else:
+            shutil.rmtree(self.dir, ignore_errors=True)
+
+    def _eh_somente_leitura(self, alvo: Path, bruto: str) -> bool:
+        if Path(bruto).name in self.task.somente_leitura:
+            return True
+        raiz = self.raiz_confinamento.resolve()
+        for rel in list(self.task.specs) + list(self.task.somente_leitura):
+            try:
+                if (raiz / rel).resolve() == alvo:
+                    return True
+            except OSError:
+                continue
+        return False
+
+    @property
+    def raiz_confinamento(self) -> Path:
+        """O que o modelo pode ver e escrever.
+
+        No modo worktree e a raiz do worktree, nao o cwd do teste: uma tarefa
+        multi-arquivo precisa ler codigo fora do pacote onde o teste roda.
+        """
+        return self._worktree or self.dir
 
     def placar(self, saida: str) -> Optional[tuple[int, int]]:
         if not self.task.regex_placar:
@@ -142,7 +248,18 @@ class Workspace:
         self.chamadas[nome] = self.chamadas.get(nome, 0) + 1
         try:
             if nome == "list_files":
-                return "\n".join(sorted(p.name for p in self.dir.iterdir()))
+                raiz = self.raiz_confinamento
+                sub = args.get("path") or "."
+                alvo = self._resolver(sub)
+                if alvo is None or not alvo.is_dir():
+                    return f"nao e um diretorio: {sub}"
+                itens = []
+                for p in sorted(alvo.iterdir()):
+                    if p.name in {"node_modules", ".git", "dist", ".next"}:
+                        continue
+                    rel = p.relative_to(raiz)
+                    itens.append(f"{rel}/" if p.is_dir() else str(rel))
+                return "\n".join(itens) or "(vazio)"
 
             if nome == "read_file":
                 alvo = self._resolver(args.get("path", ""))
@@ -154,14 +271,18 @@ class Workspace:
 
             if nome == "write_file":
                 caminho = args.get("path", "")
-                # A recusa é explícita e informativa de propósito: interessa
-                # saber se o modelo TENTOU editar o teste, não só se conseguiu.
-                if Path(caminho).name in self.task.somente_leitura:
-                    return (f"NEGADO: '{caminho}' é somente leitura. "
-                            f"Corrija {self.task.arquivo_alvo} em vez disso.")
                 alvo = self._resolver(caminho)
                 if alvo is None:
                     return "caminho fora do diretório de trabalho"
+                # A recusa é explícita e informativa de propósito: interessa
+                # saber se o modelo TENTOU editar o teste, não só se conseguiu.
+                #
+                # Checa por caminho RESOLVIDO, não só por basename: no modo
+                # worktree os specs são relativos ao repo, e comparar basename
+                # deixaria passar `outro/dir/mesmo-nome.spec.ts`.
+                if self._eh_somente_leitura(alvo, caminho):
+                    return (f"NEGADO: '{caminho}' é somente leitura. "
+                            f"Corrija {self.task.arquivo_alvo} em vez disso.")
                 conteudo = args.get("content")
                 if not isinstance(conteudo, str):
                     return "parâmetro 'content' ausente ou não é string"
@@ -185,9 +306,10 @@ class Workspace:
         resolvida, via relative_to, que não se engana com `..` nem com prefixo
         parecido (`/tmp/x` vs `/tmp/x-outro`).
         """
+        raiz = self.raiz_confinamento.resolve()
         try:
-            alvo = (self.dir / rel).resolve()
-            alvo.relative_to(self.dir.resolve())
+            alvo = (raiz / rel).resolve()
+            alvo.relative_to(raiz)
             return alvo
         except (ValueError, OSError):
             return None

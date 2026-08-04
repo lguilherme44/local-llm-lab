@@ -34,9 +34,10 @@ adicionar um método e ele **apagou o método existente** no patch. Sintaticamen
 perfeito, aplica limpo, quebra o código. É esse tipo de falha que decide se um modelo
 serve como agente, e velocidade não prediz nada sobre ela.
 
-A investigação inteira está em
-[`docs/diagnostico-linux-benchmark.md`](docs/diagnostico-linux-benchmark.md). O que
-falta, em [`TODO.md`](TODO.md).
+Retomando o projeto depois de um tempo, comece por [`STATUS.md`](STATUS.md) — ele tem o estado
+atual, as decisões já fechadas e o que fazer em seguida. A investigação completa está em
+[`docs/diagnostico-linux-benchmark.md`](docs/diagnostico-linux-benchmark.md), e a fila de trabalho
+em [`TODO.md`](TODO.md).
 
 ## Como usar
 

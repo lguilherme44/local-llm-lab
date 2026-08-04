@@ -1,0 +1,24 @@
+{
+  "key": "booking_horizon",
+  "modo": "worktree",
+  "origem": "beahub@aeb5194 — fix(agendamento): horizonte configurável vale para todas as telas, não só o chatbot",
+  "por_que_esta_tarefa": [
+    "Multi-arquivo: a config é respeitada num caminho (chatbot) e ignorada em outro (telas do staff). O eixo que faltava.",
+    "Causa não-local por definição: o sintoma é 'o Settings não surte efeito'; a causa é um default fixo no controller mais um valor hardcoded no app.",
+    "Exige entender a intenção do código, não só corrigir uma expressão: descobrir que existe uma fonte de verdade (Tenant.bookingHorizonDays) e ligar o caminho que a ignora.",
+    "Precisa preservar comportamento de quem passa daysAhead explícito (chatbot, waitlist) — regressão aqui reprova."
+  ],
+  "repo": "~/Desktop/Beahub/wk/beahub",
+  "commit": "aeb5194",
+  "cwd": "api",
+  "arquivo_alvo": "api/src/modules/availability/availability.service.ts",
+  "specs": ["api/src/modules/availability/availability.service.spec.ts"],
+  "link_node_modules": ["api"],
+  "somente_leitura": ["availability.service.spec.ts"],
+  "comando_teste": [
+    "npx", "jest", "--silent", "--ci",
+    "src/modules/availability/availability.service.spec.ts"
+  ],
+  "regex_placar": "Tests:.*?(\\d+) passed.*?(\\d+) total",
+  "prompt": "A suíte de testes deste projeto está falhando. Corrija o código para que todos os testes passem.\n\nContexto do bug: o horizonte de agendamento (`bookingHorizonDays`) é configurável no Settings da barbearia, mas só surte efeito no auto-atendimento pelo chatbot. As telas do staff continuam mostrando uma janela fixa, ignorando a configuração.\n\nO teste que falha está em `src/modules/availability/availability.service.spec.ts`. Ele é somente leitura — corrija o código de produção. Use as ferramentas para investigar e rode os testes para confirmar antes de terminar."
+}

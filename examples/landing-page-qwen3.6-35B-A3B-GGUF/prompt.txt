@@ -1,0 +1,8 @@
+Atue como um Engenheiro Front-end Sênior, especialista em UI/UX, focado em conversão e performance. Sua tarefa é escrever o código completo de uma Landing Page moderna e responsiva em um arquivo index.html.
+
+Diretrizes de Design e Animações (Tailwind CSS):
+1. Estilo moderno e minimalista (clean UI), com suporte a dark mode ou utilizando uma paleta de cores bem contrastante.
+2. Uso intenso de microinterações e animações nativas do Tailwind (ex: transition-all, duration-300, hover:-translate-y-1, hover:shadow-xl).
+3. Crie animações de entrada para as seções usando classes utilitárias (ex: animate-fade-in, animate-slide-up). Se necessário, forneça o trecho do tailwind.config.js estritamente com os keyframes.
+4. Layout mobile-first rigoroso (sm:, md:, lg:).
+5. Efeitos modernos, como glassmorphism (backdrop-blur) em headers fixos e gradientes sutis (bg-gradient-to-r).

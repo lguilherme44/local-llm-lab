@@ -213,6 +213,32 @@ que interessa.
 - [ ] **3.10** Parar de agregar num `overall_score` único a média de notas binárias 10-ou-4.
       Reportar os eixos separados, ou pesos explícitos e declarados.
 
+## Fase 7 — O runner confunde falha de rede com falha do modelo (PRIORIDADE)
+
+Aconteceu **três vezes em um dia**, com três causas diferentes, e em todas o sintoma foi o mesmo:
+`REPROVADO`, indistinguível de o modelo ter errado.
+
+| causa real | como apareceu |
+|---|---|
+| VRAM insuficiente em ctx 32k (238 MiB) | `NAO_CARREGOU` no `deepseek` |
+| ctx do perfil apertado (8k para prompt de 11k) | `HTTP 400` no `quality`, 0/2 em duas tarefas |
+| VPN reescrevendo a rota no Mac | `Network is unreachable` |
+
+Nos dois primeiros eu quase deixei um veredito falso virar decisão — no segundo, o usuário já tinha
+autorizado apagar o modelo.
+
+- [ ] **7.1** Distinguir **falha de infraestrutura** de **falha do modelo**. Erro de rede, HTTP 4xx
+      de contexto, e servidor fora do ar devem **abortar a execução** com diagnóstico, nunca contar
+      como tentativa reprovada. Hoje `uma_tentativa()` põe qualquer exceção em `motivo` e segue.
+- [ ] **7.2** Checar o orçamento **antes** de rodar: comparar o tamanho do prompt da tarefa com o
+      `n_ctx` do servidor (vem em `/props`) e abortar com mensagem clara se não couber. Isso teria
+      pego o caso do `quality` em segundos, em vez de 40 minutos.
+- [ ] **7.3** Diagnosticar rota antes de culpar a máquina: em `Network is unreachable`, sugerir VPN
+      (`route get <ip>`, `scutil --nc list`) antes de sugerir servidor caído. Já custou uma rodada
+      inteira de diagnóstico errado.
+- [ ] **7.4** Considerar rodar o runner **na própria máquina Linux**. Hoje ele roda no Mac e depende
+      da rota; VPN, Wi-Fi trocando ou o Mac dormindo corrompem medição de 1h30.
+
 ## Fase 0 — Bloqueios de ambiente
 
 - [x] **0.1** ~~Máquina Linux fora do ar~~ — **era a VPN do lado do Mac**, não a máquina. O

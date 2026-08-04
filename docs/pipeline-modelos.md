@@ -61,6 +61,23 @@ Três regras que sustentam o desenho:
 
 ---
 
+## Aviso: a evidência abaixo foi coletada com uma ferramenta inadequada
+
+As conclusões desta página nasceram de execuções em que o modelo só tinha **"escrever arquivo
+completo"** como forma de editar código. Depois de dar a ele **edição cirúrgica** (`str_replace`),
+três tarefas de bug real que antes falhavam passaram a acertar **3 de 3** — e gastando **6,6× menos
+tokens**.
+
+Isso não invalida o desenho de camadas, mas relativiza a premissa "o gargalo é insight": parte do
+que parecia limite de raciocínio era limite da ferramenta. O que fica de pé sem ressalva:
+
+- teste como juiz, nunca o relato do modelo;
+- edição cirúrgica é requisito;
+- bug com causa longe do sintoma é mais caro que bug local.
+
+O que precisa de nova medição: **quanto do ganho de 1/5 → 5/5 vinha do plano e quanto vinha de
+compensar a ferramenta ruim.** Está em `TODO.md`.
+
 ## Por que este desenho e não outro
 
 Não é preferência estética. Sai de quatro medições feitas neste repositório

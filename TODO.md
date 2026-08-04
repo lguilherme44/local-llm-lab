@@ -208,6 +208,28 @@ que interessa.
 - [ ] **3.10** Parar de agregar num `overall_score` único a média de notas binárias 10-ou-4.
       Reportar os eixos separados, ou pesos explícitos e declarados.
 
+## Fase 5 — Separar ganho de plano de ganho de ferramenta (PRIORIDADE)
+
+Descoberto em 04/08/2026 e é o que mais afeta as conclusões atuais.
+
+Todas as execuções que sustentam "o gargalo do modelo é insight, e o plano supre" foram feitas
+quando a única forma de editar era `write_file` (reescrever o arquivo inteiro). Depois de adicionar
+`str_replace`:
+
+| tarefa | com `write_file` | com `str_replace` |
+|---|---|---|
+| `product_unavailable` | 3/3, 3.291 tokens | 3/3, **496 tokens** |
+| `booking_horizon` | erro HTTP 500 | **3/3**, 603 tokens |
+| `pwa_ios_starturl` | não rodado | **3/3**, ~1.420 tokens |
+
+- [ ] **5.1** Re-rodar `timeline_midnight` com `str_replace`, `--temperature 0.6 --repeats 5`. O
+      1/5 pode ter sido em parte limitação de ferramenta: o modelo reescrevia o arquivo de 194
+      linhas inteiro a cada tentativa, e as 3 reescritas eram tateio caro.
+- [ ] **5.2** Se o 1/5 subir muito, re-rodar `timeline_midnight_planned` também e recalcular o
+      ganho atribuível ao PLANO. Hoje o "1/5 → 5/5" mistura duas variáveis.
+- [ ] **5.3** Atualizar `docs/pipeline-modelos.md`, `STATUS.md` e `README.md` com o número
+      corrigido. O aviso já está no topo da pipeline; falta o dado.
+
 ## Fase 4 — Reavaliar as escolhas de modelo com dados válidos
 
 - [ ] **4.1** Re-rodar a matriz completa sob CUDA e refazer `BENCHMARK_REPORT.md` (o atual está

@@ -218,6 +218,48 @@ instrumento em vez do modelo?**
 - **Landing page não é benchmark.** Fica como amostra em `examples/`. Serve de smoke test de
   "produz saída longa sem quebrar" e nada além.
 
+## 7z. Resultado com `str_replace`: três tarefas de bug real, 3/3 cada
+
+Rodado em 04/08/2026, `--temperature 0.6 --repeats 3`, depois de trocar `write_file` por
+`str_replace`:
+
+| tarefa | tipo | resultado | placar | turnos | tokens |
+|---|---|---|---|---|---|
+| `product_unavailable` | local, API+jest | **3/3** | 30/31 → 31/31 | 3 | **~490** |
+| `booking_horizon` | multi-arquivo, API+jest | **3/3** | 6/7 → 7/7 | 3 | **~620** |
+| `pwa_ios_starturl` | bug de produção, front+vitest | **3/3** | 5/8 → 8/8 | 4 | **~1.420** |
+
+O `pwa_ios_starturl` é o que o autor relatou de memória e disse ter sido *"BEM CHATO de achar"*,
+com a expectativa explícita de que o modelo não resolveria. Resolveu, 3 de 3, em 4 turnos.
+
+### A troca de ferramenta mudou tudo, não só um pouco
+
+Mesma tarefa `product_unavailable`, antes e depois:
+
+| | com `write_file` | com `str_replace` |
+|---|---|---|
+| tokens | 3.291 | **496** |
+| tempo | 481 s | 247 s |
+
+**6,6× menos tokens para o mesmo resultado.** E o `booking_horizon` passou de erro HTTP 500 (a
+requisição morria) para 3/3.
+
+Reescrever o arquivo inteiro não era só caro — era o que impedia a tarefa de acontecer. Ver 7a.
+
+### Ressalva sobre o `pwa_ios_starturl`
+
+Um dos nomes de teste do spec é *"emite start_url e scope absolutos (nunca resolvidos contra a Blob
+URL)"*. Isso praticamente enuncia a correção. O modelo tinha uma dica forte.
+
+Isso aponta uma limitação **estrutural** desta abordagem de benchmark: quando o teste é escrito por
+quem acabou de achar o bug, o nome do teste costuma codificar o insight. Fixtures derivadas de
+commits de fix **sistematicamente subestimam a dificuldade de descobrir** o problema, e medem bem
+apenas a dificuldade de corrigi-lo.
+
+Para medir descoberta seria preciso dar ao modelo o sintoma e **nenhum** teste — e aí não há
+critério objetivo de sucesso. É um trade-off sem saída limpa; o honesto é declarar qual dos dois
+está sendo medido.
+
 ## 7a. O desenho das ferramentas decide a viabilidade
 
 Descoberto ao construir as tarefas de worktree, e vale mais que qualquer número de tok/s.

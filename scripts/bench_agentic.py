@@ -246,7 +246,10 @@ class Workspace:
     def placar(self, saida: str) -> Optional[tuple[int, int]]:
         if not self.task.regex_placar:
             return None
-        m = re.search(self.task.regex_placar, saida)
+        # Tira as cores ANSI: jest e vitest colorem os numeros, e a sequencia
+        # de escape fica entre o rotulo e o digito, quebrando o regex.
+        limpo = re.sub(r"\x1b\[[0-9;]*m", "", saida)
+        m = re.search(self.task.regex_placar, limpo, re.DOTALL)
         if not m:
             return None
         try:
@@ -255,14 +258,23 @@ class Workspace:
             return None
 
     def rodar_testes(self) -> tuple[bool, str]:
+        """Devolve a saída COMPLETA, sem truncar.
+
+        Truncar aqui era um defeito: o placar era extraído do texto já cortado.
+        O vitest manda o resumo no stdout e o detalhe das falhas no stderr, e
+        como a concatenação é stdout+stderr, pegar os últimos 2500 chars
+        descartava justamente a linha `Tests  N passed`.
+
+        Quem trunca é quem mostra ao modelo (ver executar()), não quem mede.
+        """
         try:
             p = subprocess.run(self.task.comando_teste, cwd=self.dir,
-                               capture_output=True, text=True, timeout=180)
+                               capture_output=True, text=True, timeout=300)
         except subprocess.TimeoutExpired:
-            return False, "TIMEOUT: a suíte não terminou em 180s"
+            return False, "TIMEOUT: a suíte não terminou em 300s"
         except FileNotFoundError as exc:
             return False, f"comando de teste não encontrado: {exc}"
-        return p.returncode == 0, (p.stdout + p.stderr)[-2500:]
+        return p.returncode == 0, p.stdout + p.stderr
 
     def executar(self, nome: str, args: Dict[str, Any]) -> str:
         self.chamadas[nome] = self.chamadas.get(nome, 0) + 1
@@ -345,6 +357,14 @@ class Workspace:
             if nome == "run_tests":
                 ok, saida = self.rodar_testes()
                 cab = "TODOS OS TESTES PASSARAM\n" if ok else "AINDA FALHANDO\n"
+                # A truncagem vive aqui, no que o modelo LE — nunca no que a
+                # gente mede. Mantem cabeca e cauda: o resumo costuma estar num
+                # extremo e o detalhe da falha no outro.
+                limite = 3000
+                if len(saida) > limite:
+                    meio = limite // 2
+                    saida = (saida[:meio] + "\n\n[...saída cortada no meio...]\n\n"
+                             + saida[-meio:])
                 return cab + saida
 
             return f"ferramenta desconhecida: {nome}"

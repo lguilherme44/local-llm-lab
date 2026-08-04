@@ -1,5 +1,8 @@
 # local-llm-lab
 
+> Novo por aqui? Comece em **[COMECE-AQUI.md](COMECE-AQUI.md)** — explicação sem jargão do
+> que descobrimos e por quê.
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey.svg?style=flat-square)](#instalação)
 [![Runtime](https://img.shields.io/badge/runtime-llama.cpp%20%7C%20MLX-blue.svg?style=flat-square)](#instalação)

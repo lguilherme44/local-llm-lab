@@ -1,0 +1,32 @@
+{
+  "key": "pwa_ios_starturl",
+  "modo": "worktree",
+  "origem": "beahub@f7085be — fix(webchat): corrige start_url do PWA do widget instalado no iOS",
+  "por_que_esta_tarefa": [
+    "Bug REAL de producao, relatado pelo usuario de memoria: ao instalar o SPA no iPhone, o atalho perdia o slug da barbearia — abria chat.beahub.com.br em vez de chat.beahub.com.br/barbeariadmk.",
+    "Foi caro de achar: cinco commits num unico dia (30/07/2026) atacando a mesma familia de sintomas.",
+    "O arquivo alvo tem ZERO imports (150 linhas), mas o spec usa vitest com vi — por isso roda em modo worktree, com o node_modules do app.",
+    "LIMITACAO CONHECIDA: o nome de um dos testes ('emite start_url e scope absolutos (nunca resolvidos contra a Blob URL)') praticamente enuncia a correcao. Isso enfraquece a tarefa como teste de PLANEJADOR, mas mantem o valor como teste de EXECUTOR."
+  ],
+  "repo": "~/Desktop/Beahub/wk/beahub",
+  "commit": "f7085be",
+  "cwd": "bflowbarber-app",
+  "arquivo_alvo": "bflowbarber-app/src/pwa/webchatPwa.ts",
+  "specs": [
+    "bflowbarber-app/src/pwa/webchatPwa.spec.ts"
+  ],
+  "link_node_modules": [
+    "bflowbarber-app"
+  ],
+  "somente_leitura": [
+    "webchatPwa.spec.ts"
+  ],
+  "comando_teste": [
+    "npx",
+    "vitest",
+    "run",
+    "src/pwa/webchatPwa.spec.ts"
+  ],
+  "regex_placar": "Tests\\s+(?:\\d+ failed \\| )?(\\d+) passed \\((\\d+)\\)",
+  "prompt": "A suíte de testes deste projeto está falhando. Corrija o código para que todos os testes passem.\n\nContexto do bug (relato de produção): o Web Chat é um PWA que o cliente instala na tela inicial do iPhone. Quando instalado, o atalho deveria abrir a barbearia específica — por exemplo `chat.beahub.com.br/barbeariadmk`. Mas ele abre só `chat.beahub.com.br`, sem o slug da barbearia, e o cliente cai numa tela sem contexto.\n\nOs caminhos abaixo são relativos à raiz do diretório de trabalho:\n  • código a corrigir: `bflowbarber-app/src/pwa/webchatPwa.ts`\n  • teste que falha (SOMENTE LEITURA): `bflowbarber-app/src/pwa/webchatPwa.spec.ts`\n\nUse `read_file` com esses caminhos completos. Prefira `str_replace` a `write_file`. Rode os testes para confirmar antes de terminar."
+}

@@ -184,6 +184,14 @@ tiny|Qwen/Qwen2.5-Coder-3B-Instruct-GGUF|Q4_K_M|2.00|16384|2.90|0.3|0|auto|nao|n
 EOF
 }
 
+# ⚠️ NÃO edite as URLs abaixo com `sd`. No `sd`, `$repo` na string de
+# substituição é referência a GRUPO DE CAPTURA, não variável de shell — e como
+# não existe grupo com esse nome, expande para vazio. Foi assim que a URL virou
+# `https://huggingface.co//resolve/main/` e todo download de perfil sem `file`
+# explícito quebrou com 404. Ficou latente do commit 7d29e6f até 04/08, porque
+# os pesos que interessavam já estavam em disco. Use `python3` para editar
+# qualquer coisa com `$` na substituição.
+#
 # Resolve `repo` + `quant` num nome de arquivo .gguf concreto, via API do HF.
 #
 # Por que não usar o `-hf` do llama.cpp: o build local pode não ter TLS
@@ -503,7 +511,7 @@ cmd_start() {
   if [[ ! -f "$model_path" ]]; then
     echo "${YLW}Baixando peso $resolved...${R}"
     mkdir -p "$(dirname "$model_path")"
-    curl -f -C - -L --progress-bar "https://huggingface.co//resolve/main/" \
+    curl -f -C - -L --progress-bar "https://huggingface.co/$repo/resolve/main/$resolved" \
       -o "$model_path" || {
         echo "${RED}❌ Download falhou. Removendo arquivo parcial.${R}"
         rm -f "$model_path"
@@ -759,10 +767,10 @@ cmd_pull() {
   # disco e o `start` seguinte falhava com erro de GGUF corrompido, longe da
   # causa. Falhar aqui, alto, é mais barato.
   if [[ -n "$INHIBIT" ]]; then
-    $INHIBIT curl -f -C - -L --progress-bar "https://huggingface.co//resolve/main/" -o "$model_path" \
+    $INHIBIT curl -f -C - -L --progress-bar "https://huggingface.co/$repo/resolve/main/$resolved" -o "$model_path" \
       || { echo "${RED}❌ Download falhou.${R}"; rm -f "$model_path"; exit 1; }
   else
-    curl -f -C - -L --progress-bar "https://huggingface.co//resolve/main/" -o "$model_path" \
+    curl -f -C - -L --progress-bar "https://huggingface.co/$repo/resolve/main/$resolved" -o "$model_path" \
       || { echo "${RED}❌ Download falhou.${R}"; rm -f "$model_path"; exit 1; }
   fi
   echo "${GRN}✓ Download concluído em $model_path${R}"

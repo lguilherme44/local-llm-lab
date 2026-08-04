@@ -108,7 +108,14 @@ else
 fi
 
 # ─── perfis ─────────────────────────────────────────────────────────────────────
-#  perfil | repo | quant | weights_gb | ctx | vram_gb | ram_gb | cpu_moe | ngl | tools | file | extra_args | desc
+#  perfil | repo | quant | weights_gb | ctx | vram_gb | ram_gb | cpu_moe | ngl | tools | status | tps | file | extra_args | desc
+#
+# `status` e `tps` existem porque o veredito estava enfiado na descrição, e
+# descrição longa quebra o alinhamento da tabela — a saída de `models` ficou
+# ilegível. Veredito é dado estruturado, não prosa.
+#
+#   status: ok | ruim | inviavel | reprovado | naotestado | precisa-fork
+#   tps:    tok/s de geração medidos NESTA máquina, ou `?` se não medido
 #
 # Sobre a coluna `ngl` — ela existe porque -ngl e --n-cpu-moe NÃO são a mesma
 # coisa, e a versão anterior derivava um do outro (`default_ngl="$cpu_moe"`).
@@ -165,15 +172,15 @@ fi
 
 get_profiles() {
   cat <<'EOF'
-chat8b|Qwen/Qwen3-8B-GGUF|Q4_K_M|5.03|16384|6.24|0.5|0|auto|nao-confiavel||--reasoning off|Qwen3 8B, 73.6 tok/s, o unico que cabe INTEIRO na VRAM (98% de uso de GPU). NAO USE COMO AGENTE: 1/8 nas fixtures de bug real e PIOROU o codigo numa delas (5/8 -> 1/8, quebrou 4 testes que passavam). Emite tool call, mas nao progride: chamou list_files 5x e desistiu. Serve para pergunta rapida, mensagem de commit, autocomplete. Chamava-se `agent`, nome trocado em 04/08 porque prometia o que nao entrega.
-fast|Qwen/Qwen2.5-Coder-7B-Instruct-GGUF|Q4_K_M|4.30|16384|5.40|0.5|0|auto|nao|||Qwen2.5 Coder 7B. Especialista em código puro, ~80 tok/s. Não serve como agente.
-moe|unsloth/Qwen3.6-35B-A3B-GGUF|UD-IQ4_NL|16.80|16384|7.10|12.5|30|99|sim|Qwen3.6-35B-A3B-UD-IQ4_NL.gguf|--reasoning off|Qwen3.6 35B MoE (3B ativos). 37.7 tok/s medidos sob CUDA com ngl 99 + cpu_moe 30. Melhor custo-beneficio nesta maquina.
-qwen27b|unsloth/Qwen3.6-27B-MTP-GGUF|IQ4_NL|15.22|16384|7.00|10.0|24|24|?|Qwen3.6-27B-IQ4_NL.gguf||INVIAVEL e peso APAGADO (04/08). 3.1 tok/s medidos sob CUDA: 15.22 GB densos nao cabem em 8 GB de VRAM, ~9 GB rodam na CPU e a GPU fica a 17%. Mantido na tabela so para documentar o contraste com o MoE de tamanho parecido, que da 37.7.
-bonsai|prism-ml/Bonsai-27B-gguf|Q1_0|3.80|16384|5.00|1.0|0|auto|?|Bonsai-27B-Q1_0.gguf||NUNCA RODOU e sem peso em disco (04/08). O quant Q1_0_g128 exige o fork da PrismML do llama.cpp; o padrao nao le. O arquivo que estava baixado (dspark-bf16, 6.9 GB) era o DRAFTER de 3.6B e 6 camadas, nao o modelo — apagado. Ver TODO fase 6.
-deepseek|bartowski/DeepSeek-Coder-V2-Lite-Instruct-GGUF|Q4_K_M|9.11|16384|6.55|6.0|20|16|nao|DeepSeek-Coder-V2-Lite-Instruct-Q4_K_M.gguf||REPROVADO e peso APAGADO (04/08). NAO faz tool calling: 0/8 nas fixtures de bug real, chamadas={} em turno 1 nas oito execucoes. Declarava tools|sim sem nunca ter sido validado. Rodava a 28.4 tok/s com ngl 16 + cpu_moe 20 em ctx 32k.
-frontier|unsloth/DeepSeek-V4-Flash-0731-GGUF|UD-IQ1_S|82.50|8192|7.00|15.0|128|128|?|DeepSeek-V4-Flash-0731-UD-IQ1_S-00001-of-00003.gguf||INVIAVEL: 304 B de parametros, 82.5 GB no menor quant, numa placa de 8 GB e 16 GB de RAM. Rodaria por streaming de SSD — o qwen27b com 15 GB ja da 3.1 tok/s. O arquivo em disco era um stub de 4 KB (download falho), apagado em 04/08. Mantido na tabela so para documentar por que nao vale.
-quality|bartowski/gemma-4-12B-it-GGUF|Q4_K_M|7.30|8192|7.80|1.0|0|auto|sim|||Gemma 4 12B. Aceita imagens e texto. Exige liberar VRAM para rodar liso.
-tiny|Qwen/Qwen2.5-Coder-3B-Instruct-GGUF|Q4_K_M|2.00|16384|2.90|0.3|0|auto|nao|||Qwen2.5 Coder 3B. Leve, ~110 tok/s. Ótimo para autocompletar e testes rápidos.
+chat8b|Qwen/Qwen3-8B-GGUF|Q4_K_M|5.03|16384|6.24|0.5|0|auto|fragil|ruim|73.6||--reasoning off|Qwen3 8B. Cabe INTEIRO na VRAM (98% de GPU). NAO e agente: 1/8 nas fixtures e piorou codigo numa delas (5/8 -> 1/8). Emite tool call mas nao progride. Serve para pergunta rapida, mensagem de commit, autocomplete. Chamava-se `agent` ate 04/08.
+fast|Qwen/Qwen2.5-Coder-7B-Instruct-GGUF|Q4_K_M|4.30|16384|5.40|0.5|0|auto|nao|naotestado|?|||Qwen2.5 Coder 7B. Especialista em codigo puro. Nunca testado no Linux; nao faz tool calling, entao nao serve como agente.
+moe|unsloth/Qwen3.6-35B-A3B-GGUF|UD-IQ4_NL|16.80|16384|7.10|12.5|30|99|sim|ok|37.7|Qwen3.6-35B-A3B-UD-IQ4_NL.gguf|--reasoning off|Qwen3.6 35B MoE, 3B ativos. 13/14 nas fixtures de bug real do Beahub. ngl 99 + cpu_moe 30. O unico validado para trabalho agentico.
+qwen27b|unsloth/Qwen3.6-27B-MTP-GGUF|IQ4_NL|15.22|16384|7.00|10.0|24|24|?|inviavel|3.1|Qwen3.6-27B-IQ4_NL.gguf||Denso de 15.22 GB: nao cabe em 8 GB de VRAM, ~9 GB rodam na CPU e a GPU fica a 17%. Peso apagado em 04/08. Fica na tabela como contraste com o MoE de tamanho parecido.
+bonsai|prism-ml/Bonsai-27B-gguf|Q1_0|3.80|16384|5.00|1.0|0|auto|?|precisa-fork|?|Bonsai-27B-Q1_0.gguf||Quant Q1_0_g128 exige o fork da PrismML do llama.cpp. O arquivo que estava baixado (dspark-bf16) era o DRAFTER de 3.6B, nao o modelo. Ver TODO fase 6.
+deepseek|bartowski/DeepSeek-Coder-V2-Lite-Instruct-GGUF|Q4_K_M|9.11|16384|6.55|6.0|20|16|nao|reprovado|28.4|DeepSeek-Coder-V2-Lite-Instruct-Q4_K_M.gguf||NAO faz tool calling: 0/8 nas fixtures, chamadas={} em turno 1 nas oito execucoes. Declarava tools|sim sem validacao. Peso apagado em 04/08.
+frontier|unsloth/DeepSeek-V4-Flash-0731-GGUF|UD-IQ1_S|82.50|8192|7.00|15.0|128|128|?|inviavel|?|DeepSeek-V4-Flash-0731-UD-IQ1_S-00001-of-00003.gguf||304 B de parametros, 82.5 GB no menor quant, numa placa de 8 GB. Rodaria por streaming de SSD. O arquivo em disco era um stub de 4 KB.
+quality|bartowski/gemma-4-12B-it-GGUF|Q4_K_M|7.30|8192|7.80|1.0|0|auto|sim|naotestado|?|||Gemma 4 12B, denso, aceita imagem. 7.3 GB de pesos em 8 GB de VRAM deixa quase nada para o KV. Este repo mediu 0.7 tok/s e tool calling NAO nesta familia (no Mac). Nome herdado, nunca validado.
+tiny|Qwen/Qwen2.5-Coder-3B-Instruct-GGUF|Q4_K_M|2.00|16384|2.90|0.3|0|auto|nao|naotestado|?|||Qwen2.5 Coder 3B. Leve, otimo para autocompletar. Nao faz tool calling.
 EOF
 }
 
@@ -210,9 +217,9 @@ print(sorted(alvo, key=len)[0])
 
 find_profile() {
   local target="$1"
-  while IFS='|' read -r name repo quant file_gb ctx vram_gb ram_gb cpu_moe ngl tools file extra_args desc; do
+  while IFS='|' read -r name repo quant file_gb ctx vram_gb ram_gb cpu_moe ngl tools status tps file extra_args desc; do
     if [[ "$name" == "$target" ]]; then
-      echo "$name|$repo|$quant|$file_gb|$ctx|$vram_gb|$ram_gb|$cpu_moe|$ngl|$tools|$file|$extra_args|$desc"
+      echo "$name|$repo|$quant|$file_gb|$ctx|$vram_gb|$ram_gb|$cpu_moe|$ngl|$tools|$status|$tps|$file|$extra_args|$desc"
       return 0
     fi
   done < <(get_profiles)
@@ -433,7 +440,7 @@ cmd_start() {
   local p_data
   p_data=$(find_profile "$prof_name") || { echo "${RED}Perfil '$prof_name' não existe.${R}"; exit 1; }
 
-  IFS='|' read -r name repo quant file_gb ctx vram_gb ram_gb cpu_moe ngl tools file extra_args desc <<< "$p_data"
+  IFS='|' read -r name repo quant file_gb ctx vram_gb ram_gb cpu_moe ngl tools status tps file extra_args desc <<< "$p_data"
   local final_ctx="${CUSTOM_CTX:-$ctx}"
 
   echo "${B}Subindo llm-server [perfil: ${CYA}$prof_name${R}${B}]...${R}"
@@ -727,7 +734,7 @@ cmd_pull() {
   local prof_name="${1:-$DEFAULT_PROFILE}"
   local p_data
   p_data=$(find_profile "$prof_name") || { echo "${RED}Perfil '$prof_name' não existe.${R}"; exit 1; }
-  IFS='|' read -r name repo quant file_gb ctx vram_gb ram_gb cpu_moe ngl tools file extra_args desc <<< "$p_data"
+  IFS='|' read -r name repo quant file_gb ctx vram_gb ram_gb cpu_moe ngl tools status tps file extra_args desc <<< "$p_data"
 
   mkdir -p "$MODEL_DIR"
 
@@ -763,21 +770,87 @@ cmd_pull() {
 
 # ─── comando: models ────────────────────────────────────────────────────────────
 cmd_models() {
-  echo "${B}Perfis de Modelos Disponíveis (Linux/CUDA):${R}"
-  echo ""
-  printf "%-10s %-42s %-8s %-12s %s\n" "PERFIL" "REPOSITÓRIO" "PESO(GB)" "TOOLS" "DESCRIÇÃO"
-  echo "────────── ────────────────────────────────────────── ──────── ──────────── ──────────────────────────────────────────────────"
-  
+  local verboso=false
+  [[ "${1:-}" == "-v" || "${1:-}" == "--verbose" ]] && verboso=true
+
   local curr_prof=""
-  if is_running; then
-    curr_prof=$(cat "$PROF_FILE" 2>/dev/null || echo "")
+  is_running && curr_prof=$(cat "$PROF_FILE" 2>/dev/null || echo "")
+
+  # Larguras fixas e descrição TRUNCADA. A versão anterior imprimia a descrição
+  # inteira, e como os vereditos ficaram longos o texto quebrava a linha e
+  # destruía o alinhamento — a tabela ficava ilegível. Detalhe completo vai no
+  # `-v`, que imprime em blocos em vez de colunas.
+  local cols=${COLUMNS:-0}
+  [[ "$cols" -lt 40 ]] && cols=$(tput cols 2>/dev/null || echo 100)
+
+  echo ""
+  echo "${B}Perfis (Linux/CUDA) — RTX 3060 Ti 8 GB${R}"
+  echo ""
+  # Cabeçalho de coluna só faz sentido no modo tabela; no -v a saída é em blocos.
+  if ! $verboso; then
+    printf "${DIM}%-2s %-9s %7s %8s  %-5s %-6s %-13s%s${R}\n" \
+           "" "PERFIL" "TOK/S" "PESO" "DISCO" "TOOLS" "ESTADO" "OBSERVAÇÃO"
+    printf "${DIM}%s${R}\n" "$(printf '─%.0s' $(seq 1 $((cols>110?110:cols-1))))"
   fi
 
-  while IFS='|' read -r name repo quant file_gb ctx vram_gb ram_gb cpu_moe ngl tools file extra_args desc; do
-    local mark=" "
-    if [[ "$name" == "$curr_prof" ]]; then mark="*"; fi
-    printf "%-10s %-42s %-8s %-12s %s\n" "$mark$name" "$repo" "${file_gb}GB" "$tools" "$desc"
-  done < <(get_profiles)
+  # Ordem: o que funciona primeiro. Quem lê a tabela quer decidir, e decidir
+  # começa pelo que dá para usar.
+  local ordem="ok ruim naotestado precisa-fork reprovado inviavel"
+  for filtro in $ordem; do
+    while IFS='|' read -r name repo quant file_gb ctx vram_gb ram_gb cpu_moe ngl tools status tps file extra_args desc; do
+      [[ "$status" != "$filtro" ]] && continue
+
+      local mark=" "; [[ "$name" == "$curr_prof" ]] && mark="${GRN}▸${R}"
+
+      # DISCO é medido, não declarado: é a diferença entre "existe o perfil" e
+      # "existe o peso". Vários perfis aqui têm peso apagado de propósito.
+      # Texto SEM cor aqui: printf conta os escapes ANSI como caracteres, então
+      # colorir antes de padronizar desalinha a linha toda. Cor entra depois.
+      local disco="--" dcor="$RED"
+      local alvo="$MODEL_DIR/$file"
+      if [[ -n "$file" && -f "$alvo" ]]; then
+        disco="ok"; dcor="$GRN"
+      elif [[ -z "$file" ]]; then
+        disco="hf"; dcor="$DIM"
+      fi
+
+      local cor="$R"
+      case "$status" in
+        ok)        cor="$GRN" ;;
+        ruim|naotestado) cor="$YLW" ;;
+        *)         cor="$RED" ;;
+      esac
+
+      local tcor="$R"
+      [[ "$tools" == "nao" || "$tools" == "fragil" ]] && tcor="$DIM"
+
+      if $verboso; then
+        printf "\n%b %-9s ${B}%s${R}\n" "$mark" "$name" "$repo ($quant)"
+        printf "   %s tok/s · %s GB · ctx %s · ngl %s · cpu_moe %s · tools %s · ${cor}%s${R}\n" \
+               "$tps" "$file_gb" "$ctx" "$ngl" "$cpu_moe" "$tools" "$status"
+        echo "   $desc" | fold -s -w $((cols-6)) | sed '2,$s/^/   /'
+      else
+        # 44 colunas de observação cabem em terminal de 110 sem quebrar.
+        local obs="$desc"
+        local lim=$((cols-58)); [[ $lim -lt 20 ]] && lim=20
+        [[ ${#obs} -gt $lim ]] && obs="${obs:0:$((lim-1))}…"
+        # Cada campo é padronizado como texto puro e só então recebe cor.
+        local f_disco f_tools f_status
+        printf -v f_disco  "%-5s" "$disco"
+        printf -v f_tools  "%-6s" "$tools"
+        printf -v f_status "%-13s" "$status"
+        printf "%b %-9s %7s %7sG  ${dcor}%s${R}${tcor}%s${R} ${cor}%s${R}${DIM}%s${R}\n" \
+               "$mark" "$name" "$tps" "$file_gb" "$f_disco" "$f_tools" "$f_status" "$obs"
+      fi
+    done < <(get_profiles)
+  done
+
+  echo ""
+  printf "${DIM}%s${R}\n" "ESTADO: ok=validado · ruim=nao use como agente · naotestado · reprovado · inviavel · precisa-fork"
+  printf "${DIM}%s${R}\n" "DISCO:  ok=peso em disco · --=ausente · hf=baixa da HuggingFace na hora"
+  printf "${DIM}%s${R}\n" "TOK/S:  geracao medida NESTA maquina. ▸ = carregado agora."
+  printf "${DIM}%s${R}\n" "Detalhe completo: ./linux/llm-server.sh models -v"
+  echo ""
 }
 
 # ─── roteamento principal ───────────────────────────────────────────────────────
@@ -805,7 +878,7 @@ case "$COMMAND" in
     cmd_ask "${1:-}"
     ;;
   models)
-    cmd_models
+    cmd_models "${1:-}"
     ;;
   pull)
     cmd_pull "${1:-$DEFAULT_PROFILE}"

@@ -302,8 +302,9 @@ quando a única forma de editar era `write_file` (reescrever o arquivo inteiro).
 - [x] **5.1** Re-rodado. **`timeline_midnight` com `str_replace` e SEM plano: 4/5** (era 1/5 com
       `write_file`). A hipótese estava certa: o 1/5 era em grande parte artefato de ferramenta.
 - [x] **5.3** `STATUS.md` seção 7y e `docs/pipeline-modelos.md` corrigidos com o número real.
-- [ ] **5.2** Rodar `timeline_midnight_planned` com `str_replace` para fechar a matriz 2×2. Falta
-      só a célula "edição cirúrgica + plano"; hoje sabe-se 1/5, 5/5 e 4/5 das outras três.
+- [x] **5.2** Matriz 2×2 **fechada**: edição cirúrgica + plano = **5/5**. Decomposição: ferramenta
+      vale +3 (1/5 → 4/5), plano vale +1 (4/5 → 5/5). O "1/5 → 5/5" celebrado antes era o plano
+      compensando a ferramenta ruim. Ordem de investimento: ferramenta primeiro.
 - [ ] **5.4** Aplicar `str_replace` também ao `run_benchmark.py` (a suíte single-shot ainda mede
       `patch_format` com formato próprio) e re-rodar os 6 eixos para conferir se algo muda.
 

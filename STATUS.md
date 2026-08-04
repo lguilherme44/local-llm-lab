@@ -223,12 +223,25 @@ instrumento em vez do modelo?**
 Medido em 04/08/2026. A `timeline_midnight` — o bug não-local, o mais difícil das quatro — foi
 re-rodada com `str_replace` e **sem nenhum plano**:
 
-| ferramenta disponível | plano? | `pass@5` | tokens (acertos) |
-|---|---|---|---|
-| só `write_file` | não | **1/5** | 6.964 (o único acerto) |
-| só `write_file` | **sim** | 5/5 | ~2.317 |
-| `str_replace` | não | **4/5** | 2.428 – 4.154 |
-| `str_replace` | sim | não medido | — |
+| ferramenta disponível | plano? | `pass@5` | tokens (mediana) | turnos |
+|---|---|---|---|---|
+| só `write_file` | não | **1/5** | 6.964 | 9–14 |
+| só `write_file` | sim | 5/5 | ~2.317 | 7–12 |
+| `str_replace` | não | **4/5** | ~2.900 | 9–12 |
+| **`str_replace`** | **sim** | **5/5** | **~2.591** | **6–10** |
+
+**Decomposição do ganho, agora que a matriz está completa:**
+
+- **ferramenta certa: 1/5 → 4/5.** Fator dominante, +3.
+- **plano em cima da ferramenta certa: 4/5 → 5/5.** Real, mas +1.
+- o "1/5 → 5/5" era o plano **compensando** a ferramenta ruim, não adicionando capacidade.
+
+Consequência prática: **ferramenta primeiro, plano depois.** Uma pipeline com `str_replace` e sem
+planejador já captura a maior parte do resultado.
+
+O plano tem um segundo efeito que a taxa esconde: **elimina o modo de falha perigoso.** Sem plano,
+1 de 5 foi "declarou vitória com a suíte vermelha"; com plano, zero de cinco. Ele desiste quando
+não sabe o que fazer, e o plano remove essa ambiguidade.
 
 **A conclusão de que "o gargalo do modelo é insight, e o plano supre" estava errada.** Ela vinha de
 comparar 1/5 com 5/5, mas o 1/5 era em grande parte artefato de ferramenta: o modelo reescrevia um

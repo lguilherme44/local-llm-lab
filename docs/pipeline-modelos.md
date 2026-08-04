@@ -73,6 +73,11 @@ A primeira versão desta página concluía que "o gargalo do modelo local é ins
 | escrever arquivo inteiro | não | 1/5 |
 | escrever arquivo inteiro | sim | 5/5 |
 | **edição cirúrgica** | **não** | **4/5** |
+| **edição cirúrgica** | **sim** | **5/5** |
+
+Matriz completa: a **ferramenta** vale +3 (1/5 → 4/5) e o **plano** vale +1 (4/5 → 5/5). Invista na
+ordem: ferramenta primeiro. Uma pipeline com edição cirúrgica e sem planejador já captura a maior
+parte do resultado.
 
 Ou seja: o plano deixa de ser o que **viabiliza** e passa a ser o que **melhora a consistência**
 (5/5 contra 4/5, em 7 turnos em vez de 10). Ganho real, marginal.

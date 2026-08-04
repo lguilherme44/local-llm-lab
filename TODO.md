@@ -110,15 +110,45 @@ Desligá-lo para caber no orçamento troca a dimensão que interessa pela que n�
 - [x] **2.14** `LLM_REASONING=on|off` no `llm-server.sh`, e `--reasoning` / `--label` /
       `--max-tokens-scale` no pipeline, para A/B sem editar a tabela de perfis.
 
-- [ ] **3.11** **A suíte não tem resolução para medir ganho.** O baseline acerta 18/18, que é
-      teto: qualquer variação só pode empatar ou piorar. Para comparar estratégias é preciso
-      ter tarefas onde o `--reasoning off` também falhe:
-      - bug com causa não-local (o sintoma está longe da origem)
-      - refactor que exige preservar invariante não declarado no teste
-      - caso onde a resposta óbvia está errada
-      - tarefa multi-arquivo, com o bug num arquivo e o teste em outro
-      Sem isso, "reasoning ajuda no trabalho real?" continua aberta — o 2.13 só mostrou que
-      não ajuda nas tarefas fáceis.
+- [x] **3.10** Rodar o `scripts/test-feature.py` no `moe` para saber o patamar de partida antes
+      de portar. **5/5**, sempre 3 turnos, sempre 424 tokens, 16-24 s, zero reescrita
+      (CUDA, `-ngl 99 / --n-cpu-moe 30`, ctx 32k, `--reasoning off`). Detalhes em
+      `docs/benchmarks.md`.
+
+- [ ] **3.11** **Os DOIS avaliadores estão no teto e não medem mais nada.** A suíte single-shot
+      dá 18/18 e o teste agêntico dá 5/5 determinístico. Nenhum consegue dizer se uma mudança
+      de modelo, quantização ou ferramenta melhorou — não há espaço para melhorar.
+
+      Isto é o bloqueio principal do projeto hoje. Tudo o mais (portar suíte, comparar
+      ferramentas, escolher quantização) depende de existir um avaliador com resolução.
+
+      Tarefas onde memorização não ajuda:
+      - **bug de causa não-local** — o teste falha em `A`, a causa está em `B`, e nada em `A`
+        aponta para `B`
+      - **invariante não declarado** — a correção óbvia passa o teste visível e quebra outra
+        coisa, que só um segundo teste (que o modelo não vê) pega
+      - **caso onde a resposta óbvia está errada**
+      - **multi-arquivo** — bug num arquivo, teste em outro
+
+- [ ] **3.12** **Tarefas a partir de bugs reais dos próprios repos.** É o eixo de maior valor e
+      o único que ninguém mais pode construir: código que não está no corpus de treino de
+      nenhum modelo, e que mede exatamente o trabalho que se quer automatizar.
+
+      Método: pegar commits de bugfix do histórico, reconstruir o estado anterior ao fix, e
+      usar o teste do próprio commit como critério. Precisa de 2-3 commits apontados pelo
+      usuário para começar.
+
+      O sinal de que o `test-feature.py` atual está saturado: **424 tokens idênticos em cinco
+      execuções.** Determinismo perfeito num teste de capacidade indica memorização do padrão
+      canônico ("Cache com TTL"), não raciocínio.
+
+- [ ] **3.13** Portar o `scripts/test-feature.py` para dentro do `run_benchmark.py` como eixo
+      `agentic`, com `pass@k`. Ele já faz o loop completo (4 ferramentas, pytest como critério,
+      teto de 14 turnos, arquivo de teste somente-leitura) e é estritamente melhor que o
+      `bugfix` single-shot, que é o que se usa de verdade. Fazer DEPOIS de 3.11/3.12 — portar
+      um teste saturado só automatiza um resultado que já se conhece.
+      Mede formato de edição de graça: dá para ver se o modelo reescreve o arquivo inteiro ou
+      edita cirurgicamente.
 
 ## Fase 3 — Suíte de qualidade objetiva
 

@@ -313,10 +313,11 @@ Na ordem:
   investigado.
 - Existe ~2,9 GB de swap ocupado de forma persistente durante o MoE, sem thrashing. Não
   sei se é resíduo ou custo real de 12,5 GB de experts em 16 GB de RAM.
-- **A suíte é fácil demais.** O `moe` acerta 18/18, que é teto — não dá para medir se uma
-  mudança melhora, só se piora. Faltam tarefas onde ele também erre: bug com causa
-  não-local, refactor que exige preservar invariante, caso onde a resposta óbvia está
-  errada. É a próxima coisa a fazer (`TODO.md` 3.11).
+- **Os dois avaliadores estão no teto.** A suíte single-shot dá 18/18 e o teste agêntico
+  (`scripts/test-feature.py`) dá 5/5 — sempre 3 turnos, sempre 424 tokens idênticos, o que
+  indica memorização do padrão e não raciocínio. Nenhum dos dois consegue dizer se uma
+  mudança de modelo, quantização ou ferramenta melhorou, porque não há espaço para melhorar.
+  É o bloqueio principal hoje (`TODO.md` 3.11 e 3.12) e tudo o mais depende dele.
 
 Em outro hardware os números mudam. O método não: medir antes de afirmar, e registrar
 quando a medição derruba a hipótese.

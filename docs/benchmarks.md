@@ -255,6 +255,46 @@ O critério não é heurística de texto nem julgamento: é o `pytest`.
 
 **Sobre o tempo, uma ressalva que vale mais que a coluna:** os 46 s do `moe` são com o cache de páginas quente. A mesma execução logo após reiniciar o servidor levou **352 s** — 7,6× — tomando exatamente as mesmas decisões: 2 turnos, mesma sequência de ferramentas, os mesmos 562 tokens gerados. A `temperature 0` dá reprodutibilidade de comportamento; o relógio depende de quanto do modelo está residente. Compare turnos e reescritas entre modelos; compare tempo só dentro da mesma condição de cache.
 
+### Reexecução em 03/08/2026: CUDA, perfil afinado, 5 repetições
+
+A linha do `Qwen3.6-35B-A3B` acima é de antes do backend estar certo — rodava em Vulkan, com
+`-ngl 36 / --n-cpu-moe 36`. Refeito com CUDA compilado, `-ngl 99 / --n-cpu-moe 30`, ctx 32k e
+`--reasoning off`, cinco execuções:
+
+| # | resultado | tempo | turnos | tokens | chamadas |
+|---|---|---|---|---|---|
+| 1 | APROVADO | 24 s | 3 | 424 | `read_file`×2, `write_file`, `run_tests` |
+| 2 | APROVADO | 16 s | 3 | 424 | idem |
+| 3 | APROVADO | 16 s | 3 | 424 | idem |
+| 4 | APROVADO | 16 s | 3 | 424 | idem |
+| 5 | APROVADO | 17 s | 3 | 424 | idem |
+
+**5/5.** Sempre a mesma sequência: lê `cache.py`, lê `test_cache.py`, escreve a correção, roda
+o teste, verde. Zero reescrita, zero turno desperdiçado. Os 176 s da medição antiga viram 16 s —
+parte é o CUDA, parte é cache de páginas quente (ver a ressalva acima).
+
+Isso estabelece que o modelo faz trabalho agêntico de verdade: ler repositório, editar arquivo,
+verificar com teste. 424 tokens de saída, ~11 s de geração a 37 tok/s.
+
+### O problema: `424` tokens idênticos cinco vezes
+
+Determinismo perfeito num teste de capacidade normalmente não é sinal de bom raciocínio — é
+sinal de memorização. "Cache com TTL" é padrão canônico em qualquer corpus de treino, e o modelo
+reproduz a mesma solução byte a byte.
+
+Somando com a suíte de `scripts/run_benchmark.py`, que dá 18/18:
+
+| suíte | resultado | serve para |
+|---|---|---|
+| single-shot, 6 eixos | 18/18 | dizer "o modelo serve" ✓ |
+| agêntico, `test-feature.py` | 5/5, determinístico | dizer "o modelo serve" ✓ |
+| qualquer comparação entre modelos ou configs | — | **nada: os dois estão no teto** |
+
+**Dois avaliadores no teto não medem mais nada.** Nenhum consegue dizer se uma mudança de
+quantização, de ferramenta ou de modelo melhorou ou piorou, porque não há espaço para melhorar.
+Para voltar a ter resolução, o benchmark precisa de tarefas onde este modelo **erre** — ver
+`TODO.md` 3.11 e 3.12.
+
 **As duas medidas apontam para lados opostos, e é esse o ponto da seção.** Pelo benchmark de geração o `agent` ganha de longe: 72,5 tok/s contra 24,4, e terminou a sessão em menos tempo de parede. Pelo teste de feature ele é o único que não entrega. Gastou os 14 turnos, reescreveu o arquivo seis vezes, rodou os testes cinco — e saiu com código quebrado.
 
 O bug dele merece registro porque é instrutivo:

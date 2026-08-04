@@ -227,6 +227,41 @@ instrumento em vez do modelo?**
 - **Landing page não é benchmark.** Fica como amostra em `examples/`. Serve de smoke test de
   "produz saída longa sem quebrar" e nada além.
 
+## 7v. Onze erros de instrumento, e o padrão que os une
+
+Vale abrir a sessão por aqui, porque é a lição mais transferível.
+
+| # | erro | como apareceu |
+|---|---|---|
+| 1 | tok/s estimado por `len(texto)//4` | superestimava ~25 % |
+| 2 | warmup envenenando o prompt cache | TTFT medido era cache hit |
+| 3 | prefill medido com prompt de 30 tokens | 17-31 tok/s quando o real era 314 |
+| 4 | prefill repetindo o mesmo prompt | rodadas 2-3 processavam 4 tokens |
+| 5 | `pass@k` com `temperature 0` | 3 execuções idênticas, 11.115 tokens exatos |
+| 6 | `list_files` quebrado por symlink no macOS | modelo cego, `write_file: 0` |
+| 7 | só `write_file`, sem edição cirúrgica | HTTP 500 ao reescrever 16 KB |
+| 8 | placar extraído de saída truncada | `Tests: N passed` cortado |
+| 9 | `pgrep -f` casando consigo mesmo | 29 min de deadlock, nada rodando |
+| 10 | tok/s extraído da linha errada | `agent` com 276 tok/s de "geração" |
+| 11 | `sd` comendo `$repo` na substituição | URL vazia, todo download 404 |
+
+**Nenhum deles apareceu como exceção ou erro.** Todos apareceram como **número plausível**. O que os
+revelou foi sempre uma **expectativa violada**:
+
+- `write_file: 0` — um executor que nunca edita não faz sentido
+- `424 tokens idênticos` cinco vezes — determinismo perfeito é suspeito
+- `4 tokens de prompt` onde eram 3.241
+- `276 tok/s` num 8B que mede 73
+- 404 num arquivo que existe
+
+O #11 é o único que virou bug publicado, e ficou latente do primeiro commit até o quarto dia — só
+apareceu porque todo peso que precisávamos já estava em disco.
+
+Aplicado a qualquer pipeline que reporte "taxa de sucesso do executor": **o número vai estar errado
+antes de estar certo.** A defesa não é revisar o cálculo, é **ter uma expectativa antes de olhar** e
+investigar quando ela é violada. E olhar as **chamadas de ferramenta**, não só o veredito — foi o
+`write_file: 0` que denunciou dois deles.
+
 ## 7x. A suíte ORDENA modelos: o `agent` 8B é inutilizável como executor
 
 Varredura de 04/08, `--temperature 0.6 --repeats 2`, ctx 32k, as quatro fixtures de bug real:

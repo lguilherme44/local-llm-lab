@@ -227,6 +227,43 @@ instrumento em vez do modelo?**
 - **Landing page não é benchmark.** Fica como amostra em `examples/`. Serve de smoke test de
   "produz saída longa sem quebrar" e nada além.
 
+## 7u. PENDENTE: o `quality` (Gemma 4 12B) está sem veredito
+
+Único item em aberto do lado de modelos. O que se sabe:
+
+| | |
+|---|---|
+| carrega | ✅ 6.769 MiB de VRAM em ctx 24576 |
+| tool calling | ✅ emite tool call estruturada válida |
+| geração | 14,7 tok/s (contra 37,7 do `moe`) |
+| multimodal | ✅ **o único que aceita imagem** |
+| fixtures de bug real | **nunca completou** |
+
+A medição foi interrompida três vezes: primeiro por `HTTP 400` (o `ctx 8192` herdado rejeitava
+prompts de 8-11k), depois duas vezes porque o usuário precisou da VPN — e o runner roda no Mac,
+então VPN corrompe a medição. Ver Fase 7 do `TODO.md`.
+
+Para retomar:
+
+```bash
+LLM_HOST=192.168.3.51 python3 scripts/bench_agentic.py product_unavailable --modelo quality \
+  --temperature 0.6 --repeats 1 -q
+LLM_HOST=192.168.3.51 python3 scripts/bench_agentic.py timeline_midnight --modelo quality \
+  --temperature 0.6 --repeats 1 -q
+```
+
+Essas duas bastam para decidir: a primeira é bug **local** (o `moe` faz 3/3), a segunda é
+**não-local** (o `moe` faz 4/5). É a distinção que separou todos os modelos até aqui.
+
+**Decisão já autorizada pelo usuário:** se for mal, apagar o peso, tirar da tabela de perfis, **e**
+limpar as linhas dos já apagados (`deepseek`, `qwen27b`, `bonsai`, `frontier`). Os vereditos estão
+salvos em [`docs/modelos-descartados.md`](docs/modelos-descartados.md), então a limpeza não perde
+conhecimento.
+
+Se for bem, ele entra como camada `low`/`medium` da pipeline: 14,7 tok/s basta para classificar e
+revisar, e libera o `moe` para o trabalho pesado. E é o único caminho para um dia ler screenshot de
+erro ou mockup.
+
 ## 7v. Onze erros de instrumento, e o padrão que os une
 
 Vale abrir a sessão por aqui, porque é a lição mais transferível.

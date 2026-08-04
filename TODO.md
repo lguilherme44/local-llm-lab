@@ -130,7 +130,38 @@ Desligá-lo para caber no orçamento troca a dimensão que interessa pela que n�
       - **caso onde a resposta óbvia está errada**
       - **multi-arquivo** — bug num arquivo, teste em outro
 
-- [ ] **3.12** **Tarefas a partir de bugs reais dos próprios repos.** É o eixo de maior valor e
+- [x] **3.11a** **Teto quebrado.** `scripts/bench_agentic.py` + a tarefa
+      `timeline_midnight`, vendorizada do bugfix real `beahub@69d3177`. O MoE reprova 0/3, com
+      crédito parcial `3/5 → 4/5`: acerta a causa raiz (meia-noite = 1440) e perde a
+      consequência (crescer a janela da grade para cobrir agendamento fora do horário). 14
+      turnos, 11.115 tokens, mínimo local após a 3ª reescrita. Agora existe um avaliador com
+      resolução.
+- [x] **3.11b** Harness de teste em Node puro (40 linhas) substituindo o vitest, para a tarefa
+      não depender do `node_modules` do repo do SaaS. `timeline.utils.ts` não tem imports, o
+      que torna isso viável.
+- [x] **3.11c** Crédito parcial via `regex_placar` no `task.json`. Veredito binário jogava fora
+      a informação que mais importa: `3/5 → 4/5` é progresso mensurável e permite comparar duas
+      configurações que ambas reprovam.
+- [x] **3.11d** `--temperature` no runner. Defeito próprio encontrado: as 3 primeiras execuções
+      saíram IDÊNTICAS (11.115 tokens exatos) porque a temperatura era 0. Chamar aquilo de
+      `pass@k` estava errado — `pass@k` exige amostragem. O runner agora avisa quando
+      `repeats > 1` com temperatura 0, e rotula a métrica como "taxa" em vez de "pass@k".
+
+- [ ] **3.11e** Rodar `timeline_midnight` com `--temperature 0.6 --repeats 5` para ter `pass@k`
+      de verdade. Talvez em 1 de 5 amostras ele escape do mínimo local.
+- [ ] **3.11f** Rodar a tarefa nos outros perfis (`agent` 8B, `deepseek`) para ver se o crédito
+      parcial os separa. É o primeiro teste que pode ordenar modelos em vez de dar 100% a todos.
+
+- [ ] **3.12** **Mais tarefas a partir de bugs reais dos próprios repos.**
+      Já validados como candidatos, com teste no próprio commit:
+      - `aeb5194` — *horizonte configurável vale para todas as telas, não só o chatbot*. 5
+        arquivos: config respeitada num lugar e ignorada em outros. É o eixo **multi-arquivo**,
+        que ainda falta.
+      - `d3372f6` — *impede vender produto indisponível no Caixa*. Regra de negócio atravessando
+        API e front.
+      Método validado no `timeline_midnight`: `git show <commit>^:<arquivo>` para o estado
+      bugado, `git show <commit>:<spec>` para o teste, confirmar vermelho→verde antes de aceitar
+      a fixture. É o eixo de maior valor e
       o único que ninguém mais pode construir: código que não está no corpus de treino de
       nenhum modelo, e que mede exatamente o trabalho que se quer automatizar.
 

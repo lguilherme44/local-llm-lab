@@ -119,6 +119,38 @@ O `patch_format` é o mais decisivo e o menos óbvio. Modelo local costuma escre
 código bom e não conseguir emitir um patch aplicável — e isso trava um agente por
 completo, sem aparecer em nenhum teste de "escreva uma função".
 
+### A tarefa que de fato mede: `timeline_midnight`
+
+As duas suítes acima estão no teto — o MoE acerta 18/18 na single-shot e 5/5 no
+`test-feature.py`. Quando o baseline acerta tudo, não dá para saber se uma mudança melhorou.
+
+`scripts/bench_agentic.py` roda tarefas multi-turno construídas a partir de **bugfixes reais** do
+Beahub. O modelo recebe `list_files`, `read_file`, `write_file` e `run_tests`, e itera até o teste
+ficar verde. O arquivo de teste é somente leitura, senão o caminho mais curto para o verde é
+apagar os testes.
+
+```bash
+python3 scripts/bench_agentic.py --listar
+LLM_HOST=192.168.3.51 python3 scripts/bench_agentic.py timeline_midnight
+LLM_HOST=192.168.3.51 python3 scripts/bench_agentic.py timeline_midnight --temperature 0.6 --repeats 5
+```
+
+Resultado atual do `moe`:
+
+```
+REPROVADO — esgotou o teto de 14 turnos
+testes: 3/5 → 4/5   (progresso parcial)
+14 turnos · 11.115 tokens · 3 reescritas
+```
+
+Ele acerta a causa raiz (`"00:00"` é fim-do-dia, 1440 minutos, não zero) e perde a consequência:
+um agendamento que começa no horário de fechamento fica fora da grade, então é preciso crescer a
+janela — e nada na mensagem de erro aponta para isso. Depois da terceira reescrita entra em mínimo
+local e gasta os turnos restantes relendo os mesmos arquivos.
+
+O `3/5 → 4/5` é o ponto: crédito parcial permite comparar duas configurações que ambas reprovam.
+Veredito binário jogaria essa informação fora.
+
 ### Por que geração de landing page saiu daqui
 
 A suíte anterior media qualidade pedindo uma landing page e pontuando por presença de
@@ -313,11 +345,9 @@ Na ordem:
   investigado.
 - Existe ~2,9 GB de swap ocupado de forma persistente durante o MoE, sem thrashing. Não
   sei se é resíduo ou custo real de 12,5 GB de experts em 16 GB de RAM.
-- **Os dois avaliadores estão no teto.** A suíte single-shot dá 18/18 e o teste agêntico
-  (`scripts/test-feature.py`) dá 5/5 — sempre 3 turnos, sempre 424 tokens idênticos, o que
-  indica memorização do padrão e não raciocínio. Nenhum dos dois consegue dizer se uma
-  mudança de modelo, quantização ou ferramenta melhorou, porque não há espaço para melhorar.
-  É o bloqueio principal hoje (`TODO.md` 3.11 e 3.12) e tudo o mais depende dele.
+- **As duas suítes fáceis estão no teto** (18/18 e 5/5) e não medem mais nada. Quem mede é a
+  `timeline_midnight` (ver abaixo). Os perfis `deepseek` e `frontier` ainda não passaram por
+  ela.
 
 Em outro hardware os números mudam. O método não: medir antes de afirmar, e registrar
 quando a medição derruba a hipótese.

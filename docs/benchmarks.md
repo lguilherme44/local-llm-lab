@@ -276,6 +276,55 @@ parte é o CUDA, parte é cache de páginas quente (ver a ressalva acima).
 Isso estabelece que o modelo faz trabalho agêntico de verdade: ler repositório, editar arquivo,
 verificar com teste. 424 tokens de saída, ~11 s de geração a 37 tok/s.
 
+## Bug real: o teto quebra
+
+`scripts/bench_agentic.py timeline_midnight`. A tarefa vem de um bugfix real do Beahub
+(`69d3177`), vendorizada em `scripts/agentic_tasks/timeline_midnight/` com um harness de teste
+de 40 linhas em Node puro — sem vitest, para o benchmark não depender do `node_modules` de
+outro repositório.
+
+**O bug:** um corte às 23:30 termina em `"00:00"`. Aparece na visão de cards e desaparece da
+timeline do dia. `"00:00"` era lido como 0 minutos em vez de fim-do-dia (1440), o que produz
+duas falhas independentes da mesma raiz: o loop da grade para no horário de fechamento e nunca
+cria o slot das 23:30, e `overlaps()` sempre devolve false porque `end=0`.
+
+| avaliador | resultado |
+|---|---|
+| suíte single-shot, 6 eixos | 18/18 |
+| `test-feature.py` (Cache com TTL) | 5/5, determinístico |
+| **`timeline_midnight` (bug real)** | **0/3** |
+
+O mesmo modelo que acerta tudo falha aqui. Três execuções, idênticas: 14 turnos, 3 reescritas,
+5 execuções de teste, 11.115 tokens, ~328 s.
+
+### Onde exatamente ele para — e é isto que dá resolução
+
+```
+testes: 3/5 → 4/5   (progresso parcial)
+```
+
+O modelo **acertou a causa raiz** e aplicou nos três lugares visíveis a partir do sintoma:
+tratou `"00:00"` como 1440 em `overlaps()`, no `endMinutes` do `buildDayTimeline`, e fez
+`minutesToTime` renderizar 1440 de volta como `"00:00"`.
+
+O que faltou é a **consequência**, não a causa: no teste que ainda falha o horário é 22:00–23:30
+e o agendamento é 23:30–00:00, ou seja, começa exatamente no fechamento, *fora* da grade. Nenhum
+tratamento de meia-noite conserta isso — é preciso crescer a janela da grade para cobrir
+agendamentos fora do horário. E nada na mensagem de erro aponta para lá.
+
+As três tentativas de escrita convergiram todas na mesma ideia. Mínimo local: depois da terceira
+ele parou de escrever e gastou 4 turnos relendo os mesmos arquivos.
+
+Comparado com a tarefa do Cache (424 tokens, 3 turnos, uma escrita), 11.115 tokens e 14 turnos é
+a diferença entre reproduzir padrão memorizado e tentar raciocinar de fato.
+
+### Por que crédito parcial importa
+
+`3/5 → 4/5` é informação que um veredito binário joga fora. É o que permite comparar duas
+configurações que ambas reprovam, e é o que faltava nos outros dois avaliadores. O `task.json`
+declara um `regex_placar` para extrair o placar da saída do teste, e o runner mede o placar final
+**sempre**, inclusive quando reprova.
+
 ### O problema: `424` tokens idênticos cinco vezes
 
 Determinismo perfeito num teste de capacidade normalmente não é sinal de bom raciocínio — é

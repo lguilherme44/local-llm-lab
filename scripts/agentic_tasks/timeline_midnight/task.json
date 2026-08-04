@@ -1,0 +1,30 @@
+{
+  "key": "timeline_midnight",
+  "origem": "beahub@69d3177 — fix(bflowbarber): keep midnight-ending appointments visible in the daily timeline",
+  "por_que_esta_tarefa": [
+    "Código de domínio real, não padrão canônico: não está no corpus de treino de nenhum modelo.",
+    "Causa não-local: o sintoma é 'agendamento desaparece da timeline'; a causa é '00:00' lido como 0 em vez de 1440.",
+    "Uma raiz, dois caminhos de falha independentes: o loop da grade para no fechamento, e overlaps() sempre retorna false.",
+    "Exige três correções coordenadas: mapear meia-noite para fim-do-dia, renderizar 1440 de volta como '00:00', e crescer a janela da grade.",
+    "Tem rede de segurança: 3 dos 5 testes já passam, então 'consertar quebrando o resto' reprova."
+  ],
+  "arquivo_alvo": "timeline.utils.ts",
+  "somente_leitura": [
+    "timeline.utils.spec.ts",
+    "harness.ts",
+    "run-tests.ts",
+    "task.json"
+  ],
+  "comando_teste": [
+    "node",
+    "--experimental-strip-types",
+    "--no-warnings",
+    "run-tests.ts"
+  ],
+  "esperado_no_inicio": {
+    "passam": 3,
+    "total": 5
+  },
+  "prompt": "A suíte de testes deste diretório está falhando. Corrija o código para que todos os testes passem.\n\nUm agendamento de barbearia que termina à meia-noite (por exemplo, um corte às 23:30 que termina em \"00:00\") aparece na visão de cards, mas desaparece da timeline do dia.\n\nUse as ferramentas para investigar e corrigir. Só o arquivo `timeline.utils.ts` pode ser modificado — o arquivo de teste é somente leitura. Rode os testes para confirmar antes de terminar.",
+  "regex_placar": "(\\d+) passaram, \\d+ falharam, de (\\d+)"
+}

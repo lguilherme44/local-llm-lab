@@ -61,31 +61,33 @@ Três regras que sustentam o desenho:
 
 ---
 
-## Aviso: a evidência abaixo foi coletada com uma ferramenta inadequada
+## A correção que mais importa: era a ferramenta, não o raciocínio
 
-As conclusões desta página nasceram de execuções em que o modelo só tinha **"escrever arquivo
-completo"** como forma de editar código. Depois de dar a ele **edição cirúrgica** (`str_replace`),
-três tarefas de bug real que antes falhavam passaram a acertar **3 de 3** — e gastando **6,6× menos
-tokens**.
+A primeira versão desta página concluía que "o gargalo do modelo local é insight, e o plano supre".
+**Estava errada**, e vale registrar por quê: todas aquelas execuções davam ao modelo apenas
+"escrever arquivo completo" como forma de editar código. a tarefa mais difícil, re-rodada com edição cirúrgica e
+**sem plano nenhum**, deu **4/5** — contra 1/5 com a ferramenta ruim, e 5/5 com plano.
 
-Isso não invalida o desenho de camadas, mas relativiza a premissa "o gargalo é insight": parte do
-que parecia limite de raciocínio era limite da ferramenta. O que fica de pé sem ressalva:
+| ferramenta | plano? | acertos |
+|---|---|---|
+| escrever arquivo inteiro | não | 1/5 |
+| escrever arquivo inteiro | sim | 5/5 |
+| **edição cirúrgica** | **não** | **4/5** |
 
-- teste como juiz, nunca o relato do modelo;
-- edição cirúrgica é requisito;
-- bug com causa longe do sintoma é mais caro que bug local.
+Ou seja: o plano deixa de ser o que **viabiliza** e passa a ser o que **melhora a consistência**
+(5/5 contra 4/5, em 7 turnos em vez de 10). Ganho real, marginal.
 
-O que precisa de nova medição: **quanto do ganho de 1/5 → 5/5 vinha do plano e quanto vinha de
-compensar a ferramenta ruim.** Está em `TODO.md`.
+A camada `heavy` continua justificada para decidir arquitetura e investigar bug de causa
+desconhecida. Mas **não** é pré-requisito para o local executar um bugfix.
 
 ## Por que este desenho e não outro
 
 Não é preferência estética. Sai de quatro medições feitas neste repositório
 ([`docs/benchmarks.md`](benchmarks.md)):
 
-**O gargalo do modelo local é insight, não execução.** Na tarefa `timeline_midnight` ele acerta a
-causa raiz e perde a consequência. Dando o plano, o mesmo modelo vai de 1/5 para 5/5 e gasta 4,3×
-menos tokens. Isso é o que justifica a camada `heavy` existir só para planejar.
+**O plano melhora consistência, não viabilidade.** Na tarefa `timeline_midnight` o modelo sozinho
+acerta 4/5 com edição cirúrgica; com plano vai a 5/5 e em menos turnos. O `heavy` se justifica por
+decisão de arquitetura e por bug de causa desconhecida — não por bugfix com teste vermelho.
 
 **Ele mente sobre ter terminado.** Sem plano, 3 de 5 falhas foram ele respondendo em prosa com o
 teste vermelho. Daí o teste como juiz ser regra e não recomendação.
@@ -106,7 +108,7 @@ verde, provavelmente não vai ficar.
 | tarefa | camada | por quê |
 |---|---|---|
 | desenhar arquitetura, escolher abordagem | heavy | decisão irreversível, contexto amplo |
-| investigar bug de causa desconhecida | heavy | é o caso onde o local comprovadamente falha |
+| investigar bug sem teste que o reproduza | heavy | sem critério objetivo o local não converge |
 | quebrar feature em passos executáveis | heavy | a qualidade do plano determina todo o resto |
 | revisar diff contra o plano | medium | julgamento sobre input pequeno |
 | decidir escalonar ou insistir | medium | idem |
@@ -114,11 +116,11 @@ verde, provavelmente não vai ficar.
 | classificar a tarefa (trivial / precisa de plano) | low | classificação |
 | extrair JSON de texto | low | idem |
 | aplicar plano definido em arquivo existente | **local** | volume de token, contexto grande |
-| corrigir bug com teste vermelho e plano | **local** | medido: 5/5 com plano |
+| corrigir bug com teste vermelho | **local** | medido: 4/5 sozinho, 5/5 com plano |
 | escrever teste a partir de especificação | local | mecânico |
 | renomear, mover, aplicar padrão repetitivo | local | idem |
 | gerar boilerplate | local | é o que ele memorizou melhor |
-| **corrigir bug sem plano** | ~~local~~ heavy | medido: 1/5. Não delegue |
+| **decidir se o resultado é aceitável** | medium | ele declara vitória com o teste vermelho |
 
 ---
 

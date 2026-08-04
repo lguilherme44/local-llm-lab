@@ -218,6 +218,44 @@ instrumento em vez do modelo?**
 - **Landing page não é benchmark.** Fica como amostra em `examples/`. Serve de smoke test de
   "produz saída longa sem quebrar" e nada além.
 
+## 7y. CORREÇÃO IMPORTANTE: o gargalo era a ferramenta, não o insight
+
+Medido em 04/08/2026. A `timeline_midnight` — o bug não-local, o mais difícil das quatro — foi
+re-rodada com `str_replace` e **sem nenhum plano**:
+
+| ferramenta disponível | plano? | `pass@5` | tokens (acertos) |
+|---|---|---|---|
+| só `write_file` | não | **1/5** | 6.964 (o único acerto) |
+| só `write_file` | **sim** | 5/5 | ~2.317 |
+| `str_replace` | não | **4/5** | 2.428 – 4.154 |
+| `str_replace` | sim | não medido | — |
+
+**A conclusão de que "o gargalo do modelo é insight, e o plano supre" estava errada.** Ela vinha de
+comparar 1/5 com 5/5, mas o 1/5 era em grande parte artefato de ferramenta: o modelo reescrevia um
+arquivo de 194 linhas inteiro a cada tentativa, e as reescritas eram tateio caro.
+
+Com a ferramenta adequada ele resolve o bug difícil **4 de 5 vezes, sozinho, sem plano nenhum**.
+
+### O que isso muda para a pipeline
+
+O plano deixa de ser o que **viabiliza** e passa a ser o que **melhora a consistência**: 5/5 contra
+4/5, e em menos turnos (7 contra 10). Ganho real, mas marginal — não a diferença entre funcionar e
+não funcionar.
+
+A camada `heavy` continua justificada para decidir arquitetura e investigar bug de causa
+desconhecida. Mas **não** é pré-requisito para o local executar bugfix, como eu havia concluído.
+
+### O risco que NÃO mudou
+
+A única falha das cinco foi outra vez o modo perigoso: *"terminou sem chamar ferramenta; suíte
+vermelha"* — declarou vitória com o código quebrado. E foi a execução mais cara de todas: 11.855
+tokens e 1.250 s, contra ~3.000 tokens e ~350 s das que acertaram.
+
+Isso reforça as duas regras que sobrevivem a qualquer correção:
+
+1. **Teste é o juiz, nunca o relato do modelo.**
+2. **Consumo alto é sinal de escalonamento**: a falha gastou 3-4× mais tokens que os acertos.
+
 ## 7z. Resultado com `str_replace`: três tarefas de bug real, 3/3 cada
 
 Rodado em 04/08/2026, `--temperature 0.6 --repeats 3`, depois de trocar `write_file` por

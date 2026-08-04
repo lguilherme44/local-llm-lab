@@ -222,13 +222,13 @@ quando a única forma de editar era `write_file` (reescrever o arquivo inteiro).
 | `booking_horizon` | erro HTTP 500 | **3/3**, 603 tokens |
 | `pwa_ios_starturl` | não rodado | **3/3**, ~1.420 tokens |
 
-- [ ] **5.1** Re-rodar `timeline_midnight` com `str_replace`, `--temperature 0.6 --repeats 5`. O
-      1/5 pode ter sido em parte limitação de ferramenta: o modelo reescrevia o arquivo de 194
-      linhas inteiro a cada tentativa, e as 3 reescritas eram tateio caro.
-- [ ] **5.2** Se o 1/5 subir muito, re-rodar `timeline_midnight_planned` também e recalcular o
-      ganho atribuível ao PLANO. Hoje o "1/5 → 5/5" mistura duas variáveis.
-- [ ] **5.3** Atualizar `docs/pipeline-modelos.md`, `STATUS.md` e `README.md` com o número
-      corrigido. O aviso já está no topo da pipeline; falta o dado.
+- [x] **5.1** Re-rodado. **`timeline_midnight` com `str_replace` e SEM plano: 4/5** (era 1/5 com
+      `write_file`). A hipótese estava certa: o 1/5 era em grande parte artefato de ferramenta.
+- [x] **5.3** `STATUS.md` seção 7y e `docs/pipeline-modelos.md` corrigidos com o número real.
+- [ ] **5.2** Rodar `timeline_midnight_planned` com `str_replace` para fechar a matriz 2×2. Falta
+      só a célula "edição cirúrgica + plano"; hoje sabe-se 1/5, 5/5 e 4/5 das outras três.
+- [ ] **5.4** Aplicar `str_replace` também ao `run_benchmark.py` (a suíte single-shot ainda mede
+      `patch_format` com formato próprio) e re-rodar os 6 eixos para conferir se algo muda.
 
 ## Fase 4 — Reavaliar as escolhas de modelo com dados válidos
 

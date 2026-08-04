@@ -15,27 +15,37 @@ Tudo aqui foi medido na máquina, e o que deu errado está registrado junto.
 
 ## Onde estamos hoje
 
-A máquina principal é um Linux com RTX 3060 Ti (8 GB de VRAM) e 16 GB de RAM.
-Medido com CUDA em 03/08/2026:
+A máquina principal é um Linux com RTX 3060 Ti (8 GB de VRAM) e 16 GB de RAM, rodando llama.cpp
+compilado com CUDA. Medições de 03 e 04/08/2026.
 
-| perfil | modelo | pesos | geração | prefill | suíte de coding |
+Sete perfis entraram, **um sobreviveu.** O critério não foi benchmark público: foram quatro tarefas
+construídas a partir de bugfixes reais do Beahub, com o teste do próprio commit como juiz.
+
+| perfil | modelo | pesos | geração | bugs reais | veredito |
 |---|---|---|---|---|---|
-| `moe` | Qwen3.6 35B-A3B (MoE, 3 B ativos) | 16,8 GB | **37,7 tok/s** | ~300 tok/s | **6/6** |
-| `agent` | Qwen3 8B | 5,0 GB | 73,6 tok/s | ~400 tok/s | 5/6 |
-| `qwen27b` | Qwen3.6 27B (denso) | 15,2 GB | 3,1 tok/s | — | inviável |
+| **`moe`** | Qwen3.6 35B-A3B (MoE, 3 B ativos) | 16,8 GB | **37,7 tok/s** | **13/14** | **use este** |
+| `quality` | Gemma 4 12B denso, multimodal | 7,3 GB | 14,7 tok/s | em aberto | único que lê imagem |
+| `chat8b` | Qwen3 8B | 5,0 GB | 73,6 tok/s | **1/8** | não use como agente |
+| `deepseek` | DeepSeek Coder V2 Lite 16B MoE | 9,7 GB | 28,4 tok/s | **0/8** | peso apagado |
+| `qwen27b` | Qwen3.6 27B denso | 15,2 GB | **3,1 tok/s** | — | peso apagado |
+| `bonsai` | Bonsai 27B | 3,8 GB | — | — | exige fork do llama.cpp |
+| `frontier` | DeepSeek V4 Flash, 304 B | 82,5 GB | — | — | não cabe nem perto |
 
-**O `moe` é a resposta.** 35 B de parâmetros numa placa de 8 GB, 37 tok/s, e passa nos
-cinco eixos da suíte. Dá para usar em loop de agente.
+Três coisas que só a medição mostraria:
 
-O `qwen27b` denso é o contraste que ensina: arquivo do mesmo tamanho que o MoE, **doze
-vezes mais lento**. 15,2 GB de pesos densos não cabem em 8 GB de VRAM, então ~9 GB
-ficam na RAM e são computados pela CPU a cada token. A GPU fica a 17% de uso. Não é
-ajuste de flag, é limite físico.
+**O mais rápido é o pior.** O `chat8b` gera o dobro de tokens por segundo do `moe`, passa em tool
+calling, e numa tarefa foi de 5 testes passando para 1 — **quebrou quatro que estavam verdes**. Não
+falhou em corrigir: deixou pior do que encontrou. Ele era o perfil *padrão* do script, chamado
+`agent`.
 
-O `agent` 8B tem o dobro da velocidade e falhou justamente onde importa: pediram para
-adicionar um método e ele **apagou o método existente** no patch. Sintaticamente
-perfeito, aplica limpo, quebra o código. É esse tipo de falha que decide se um modelo
-serve como agente, e velocidade não prediz nada sobre ela.
+**MoE não é detalhe, é o que viabiliza.** O `qwen27b` tem arquivo do mesmo tamanho que o `moe` e roda
+**doze vezes mais lento**, porque 15,2 GB de pesos densos não cabem em 8 GB de VRAM e ~9 GB são
+computados pela CPU. A GPU fica a 17 %.
+
+**`tools: sim` na tabela não significa nada sem medição.** O `deepseek` declarava suporte a tool
+calling e nunca emitiu uma: `chamadas={}` em turno 1, nas oito execuções.
+
+O porquê de cada descarte está em [`docs/modelos-descartados.md`](docs/modelos-descartados.md).
 
 Retomando o projeto depois de um tempo, comece por [`STATUS.md`](STATUS.md) — ele tem o estado
 atual, as decisões já fechadas e o que fazer em seguida. A investigação completa está em
@@ -139,20 +149,23 @@ LLM_HOST=192.168.3.51 python3 scripts/bench_agentic.py timeline_midnight
 LLM_HOST=192.168.3.51 python3 scripts/bench_agentic.py timeline_midnight --temperature 0.6 --repeats 5
 ```
 
-Resultado atual do `moe`:
+Resultado do `moe` nas quatro tarefas: **13/14**.
 
-```
-REPROVADO — esgotou o teto de 14 turnos
-testes: 3/5 → 4/5   (progresso parcial)
-14 turnos · 11.115 tokens · 3 reescritas
-```
+A `timeline_midnight` é a mais dura e a que mais ensinou. Ela expôs que **a ferramenta importa mais
+que o modelo**:
 
-Ele acerta a causa raiz (`"00:00"` é fim-do-dia, 1440 minutos, não zero) e perde a consequência:
-um agendamento que começa no horário de fechamento fica fora da grade, então é preciso crescer a
-janela — e nada na mensagem de erro aponta para isso. Depois da terceira reescrita entra em mínimo
-local e gasta os turnos restantes relendo os mesmos arquivos.
+| ferramenta de edição | plano? | acertos |
+|---|---|---|
+| escrever arquivo inteiro | não | 1/5 |
+| escrever arquivo inteiro | sim | 5/5 |
+| **`str_replace` (cirúrgica)** | **não** | **4/5** |
+| `str_replace` | sim | 5/5 |
 
-O `3/5 → 4/5` é o ponto: crédito parcial permite comparar duas configurações que ambas reprovam.
+Dar edição cirúrgica vale **+3**; dar um plano vale **+1**. O ganho aparente de "plano leva 1/5 a
+5/5" era o plano *compensando* uma ferramenta ruim — com `write_file` sozinho o modelo reescreve o
+arquivo inteiro a cada tentativa, e num arquivo de 528 linhas a requisição morre.
+
+Crédito parcial (`3/5 → 4/5`) é o que permite comparar duas configurações que **ambas** reprovam.
 Veredito binário jogaria essa informação fora.
 
 ### Por que geração de landing page saiu daqui
@@ -339,7 +352,10 @@ Na ordem:
 
 ## O que não foi testado
 
-- Os perfis `deepseek` e `frontier` nunca passaram pela varredura de `cpu_moe` no
+- O `quality` (Gemma 4 12B) carrega, faz tool calling e é o único multimodal, mas **nunca
+  completou as fixtures** — a medição foi interrompida três vezes. Comando para retomar no
+  [`STATUS.md`](STATUS.md).
+- O `frontier` nunca passou pela varredura de `cpu_moe` no
   Linux. Os números vieram do Windows.
 - Os campos `vram_gb` e `ram_gb` dos perfis foram herdados e não revalidados sob CUDA.
   Só o `moe` está medido.

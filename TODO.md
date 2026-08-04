@@ -231,6 +231,60 @@ que interessa.
       requisição falhar com `Network is unreachable`, sugerir VPN antes de sugerir máquina caída.
       Custou uma rodada de diagnóstico errado.
 
+## Fase 6 — Bonsai: baixamos o arquivo errado, e o certo não roda aqui
+
+O perfil `bonsai` nunca funcionou em nenhuma bateria, e agora se sabe por quê — dois problemas
+independentes.
+
+**1. O arquivo baixado não era o modelo.** `Bonsai-27B-dspark-bf16.gguf` (6.955 MiB = 7,29 GB
+decimais) é o **drafter de decodificação especulativa**, não o Bonsai-27B. Confirmado lendo os
+metadados do GGUF:
+
+```
+general.architecture = dspark      (não qwen3)
+general.size_label   = 3.6B        (não 27B)
+dspark.block_count   = 6           (seis camadas)
+tensores             = 79
+```
+
+O `general.size_label` de 3,6 B explica a estranheza que levantou a suspeita: "27B em 6,79 GB de
+bf16" era impossível, porque 27 B em bf16 pesaria ~54 GB. Não era bf16 de um 27B — era bf16 de um
+3,6B auxiliar.
+
+**2. O modelo certo exige um fork.** `Bonsai-27B-Q1_0.gguf` (3,8 GB) usa quantização de ~1,1 bit
+por peso com kernels `Q1_0_g128`. O README da PrismML instrui a clonar **o fork deles do
+llama.cpp**; o llama.cpp padrão não lê nem a arquitetura `dspark` nem o quant `Q1_0`.
+
+- [x] **6.0** Perfil `bonsai` corrigido para apontar ao `Bonsai-27B-Q1_0.gguf`, com aviso explícito
+      de que não roda no llama.cpp padrão. Retirado do default da varredura.
+- [ ] **6.1** **Decisão:** vale manter um segundo binário do llama.cpp (o fork da PrismML) só para
+      testar o Bonsai? Custo: outra compilação CUDA de 10-25 min, um segundo `llama-server` para
+      versionar, e dependência de um fork que pode não acompanhar o upstream.
+- [ ] **6.2** Se sim, o `llm-server.sh` precisa suportar binário por perfil (hoje há um
+      `LLAMA_SERVER` único).
+- [ ] **6.3** Apagar o drafter baixado por engano (7,29 GB inúteis sem o modelo principal):
+      `~/.local/share/llm-server/models/Bonsai-27B-dspark-bf16.gguf`
+
+### Vale a pena? O que a PrismML afirma, e o que eu checaria
+
+Alegações do anúncio ([prismml.com/news/bonsai-27b](https://prismml.com/news/bonsai-27b)):
+ternário a 1,71 bits/peso retém **95%** do baseline em precisão total; 1-bit a 1,125 bits retém
+**90%**, numa suíte de 15 benchmarks em "thinking mode".
+
+A aritmética fecha, o que é um bom sinal: 27 B × 1,71 bits ÷ 8 = 5,77 GB, e eles anunciam 5,9 GB.
+
+Duas ressalvas antes de investir tempo:
+
+1. **São números auto-reportados**, e "retém 90%" de um 27B não é o mesmo que "é melhor que um 8B
+   em precisão total". A comparação que interessa é contra o `moe` que já funciona aqui — e essa
+   ninguém publicou.
+2. **Este repositório já tem como decidir isso sem acreditar em ninguém.** As quatro fixtures de
+   bugfix real medem exatamente o que importa. Se o Bonsai rodar, ele passa pela mesma vara.
+
+Nossa própria medição já mostrou que retenção de benchmark não prediz utilidade: o `agent` 8B tem o
+dobro da velocidade do `moe`, passa em tool calling, e apagou um método existente ao aplicar um
+patch.
+
 ## Fase 5 — Separar ganho de plano de ganho de ferramenta (PRIORIDADE)
 
 Descoberto em 04/08/2026 e é o que mais afeta as conclusões atuais.

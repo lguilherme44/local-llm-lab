@@ -227,12 +227,24 @@ Aconteceu **três vezes em um dia**, com três causas diferentes, e em todas o s
 Nos dois primeiros eu quase deixei um veredito falso virar decisão — no segundo, o usuário já tinha
 autorizado apagar o modelo.
 
-- [ ] **7.1** Distinguir **falha de infraestrutura** de **falha do modelo**. Erro de rede, HTTP 4xx
+- [x] **7.1** Distinguir **falha de infraestrutura** de **falha do modelo**. Erro de rede, HTTP 4xx
       de contexto, e servidor fora do ar devem **abortar a execução** com diagnóstico, nunca contar
       como tentativa reprovada. Hoje `uma_tentativa()` põe qualquer exceção em `motivo` e segue.
-- [ ] **7.2** Checar o orçamento **antes** de rodar: comparar o tamanho do prompt da tarefa com o
+- [x] **7.2** Checar o orçamento **antes** de rodar: comparar o tamanho do prompt da tarefa com o
       `n_ctx` do servidor (vem em `/props`) e abortar com mensagem clara se não couber. Isso teria
       pego o caso do `quality` em segundos, em vez de 40 minutos.
+> **Feito em 19/08**, com um refinamento que só apareceu medindo. O 7.1 classificava todo
+> `HTTP 400` como infraestrutura — e isso estaria **errado**. Testando o `ling3-tiny` no
+> `booking_horizon`: com ctx 16k ele parou em 15.967, com 32k em 29.443, com 40k em 37.500. Ele
+> enche o contexto até o limite, qualquer que seja o limite, porque não converge. Aí o 400 é
+> sintoma do **modelo**, não do ambiente, e classificá-lo como infra transformaria um `REPROVADO`
+> legítimo em "não testado". A regra implementada usa o turno: 400 nos primeiros turnos é orçamento
+> mal dimensionado; 400 depois de 5+ turnos com o contexto crescendo é o modelo não convergindo.
+>
+> O 7.2 também rendeu número para o **4.3**: as fixtures do beahub têm pico real de 25k-37,5k de
+> prompt, então `ctx=16384` reprova por configuração antes de o modelo ter chance. Confirmado que
+> 32k é o piso — e acima de 32k o KV precisa ir para `q4_0`, senão estoura os 8 GB da 3060 Ti.
+
 - [ ] **7.3** Diagnosticar rota antes de culpar a máquina: em `Network is unreachable`, sugerir VPN
       (`route get <ip>`, `scutil --nc list`) antes de sugerir servidor caído. Já custou uma rodada
       inteira de diagnóstico errado.

@@ -126,3 +126,66 @@ máquina: o `tools` do `deepseek`, o `ngl` do `deepseek`, e o `ctx` do `quality`
 
 **Tabela de perfis é documentação, e documentação apodrece.** O que a mantém honesta é o `status` e o
 `tps` serem preenchidos por medição, e ficarem vazios (`?`) quando ninguém mediu.
+
+---
+
+## Ling 3.0 tiny (`ling3-tiny`) — rápido e incapaz, 0/14
+
+| | |
+|---|---|
+| arquivo | `Ling-3.0-tiny-Q5_K_M.gguf`, 5,25 GB |
+| arquitetura | `bailingmoe3` — MoE de 7,9 B com **1,3 B ativos**, 128 experts, 8 por token |
+| prefill | **4503 t/s** (18× o `moe`) |
+| geração | **174,1 t/s** (4,8× o `moe`) |
+| bugs reais | **0/14** |
+
+O modelo mais rápido que já entrou nesta máquina, e o único a zerar a suíte. É o **único MoE que
+cabe inteiro na VRAM** (`cpu_moe=0`), o que fazia dele o candidato ideal no papel: esparso *e*
+todo na memória de 448 GB/s, as duas vantagens que nos outros eram excludentes.
+
+Dois modos de falha, ambos do modelo:
+
+- roda 11 turnos usando ferramentas e no último **responde em prosa dizendo que terminou**, com a
+  suíte vermelha. Bate exatamente na guarda do runner ("dizer 'corrigi' não conta");
+- esgota o teto de 14 turnos sem convergir.
+
+O caso mais instrutivo é o `booking_horizon`, que estoura em `HTTP 400`: com ctx 16k parou em
+15.967 tokens, com 32k em 29.443, com 40k em 37.500. **Ele enche o contexto até o limite, qualquer
+que seja o limite.** Dar mais janela não ajuda — e por isso o 400 aqui é sintoma do modelo, não do
+ambiente (ver o refinamento do TODO 7.1).
+
+**O que ele acrescenta à tabela:** confirma pela terceira vez que tok/s e capacidade agêntica são
+eixos independentes. O `chat8b` fez 1/8 a 73,6 t/s; este fez 0/14 a 174 t/s. O que separa os dois
+do `moe` não é velocidade nem tamanho do arquivo — é **parâmetros ativos por token**: 1,3 B aqui
+contra 3 B no `moe`.
+
+Exige llama.cpp com `bailingmoe3`; o build `9d57ce4` parava em `bailingmoe2` e falhava com
+`failed to load model` sem dizer o motivo.
+
+---
+
+## NVIDIA Nemotron 3.5 Lightning 30B-A3B — não cabe, nem em 1 bit
+
+Descartado **sem testar**, por medição de tamanho. Fica registrado porque a arquitetura é a certa e
+a tentação de tentar vai voltar.
+
+| quantização | tamanho |
+|---|---|
+| `UD-IQ1_M` / `UD-IQ2_XXS` / `UD-IQ2_M` | **18,09 GiB** (as três) |
+| `UD-IQ4_NL` | 19,78 GiB |
+| `UD-Q4_K_M` | 23,53 GiB |
+| `UD-Q5_K_M` | 28,14 GiB |
+
+Esta máquina tem ~17,7 GiB úteis (8 de VRAM + ~9,7 de RAM livre). **A menor variante já passa
+disso**, e o detalhe que decide: `IQ1_M`, `IQ2_XXS` e `IQ2_M` pesam todas 18,09 GiB. Descer de 2
+bits para 1 não muda nada, sinal de que o peso está em tensores que não quantizam (embeddings e
+attention densa). **O piso do modelo é 18 GiB**, mesmo destruindo a qualidade.
+
+A pena é que o perfil é o certo: `30B-A3B` são **3 B ativos**, a mesma classe do `moe` que passa
+13/14 — e `nemotron_h_moe` já é suportado pelo build `cd644c3`. É o primeiro candidato desde o
+`moe` a igualar o eixo que de fato prediz capacidade.
+
+**O que destravaria:** subir a RAM da máquina de 16 para 32 GB. Com ~26 GiB livres, o `UD-Q4_K_M`
+caberia e rodaria com offload como o `moe` faz hoje. Enquanto isso, a única máquina da casa que o
+comporta é o ThinkPad de 30 GiB — sem GPU, onde um A3B roda a ~5,6 t/s (medido com o `moe`),
+suficiente para batch e insuficiente para loop de agente.

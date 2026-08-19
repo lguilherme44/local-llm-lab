@@ -442,3 +442,26 @@ uv run --with pytest scripts/test-feature.py moe --host 192.168.3.51
 Se seus números divergirem muito, verifique nesta ordem: RAM livre, swap, e se o modelo cabe. Quase toda divergência grande vem daí — não do modelo.
 
 Na Máquina B a ordem é outra, porque o teto é VRAM: confirme com `.\windows\llm-server.ps1 vram` que o perfil cabe nos 8 GB. Se não couber, o llama.cpp move camadas para a CPU e a geração despenca sem avisar.
+
+---
+
+## Pre-requisitos para rodar as fixtures em outra maquina
+
+Descoberto em 19/08 tentando levar a suite para o ThinkPad. **Tres das quatro fixtures nao sao
+portaveis** — so a `timeline_midnight` roda em qualquer lugar, porque e a unica embutida.
+
+As outras tres usam `modo: worktree` e exigem, na maquina que roda o **runner**:
+
+| requisito | detalhe |
+|---|---|
+| repo `beahub` em `~/Desktop/Beahub/wk/beahub` | **privado**; o path esta no `task.json`, nao e configuravel por flag |
+| commits `d3372f6`, `aeb5194`, `f7085be` | o runner cria worktree em `<commit>^` e traz so os specs do commit |
+| `node_modules` em `api/` e `bflowbarber-app/` | o runner **symlinka** essas pastas na worktree; se nao existirem, o teste nao roda |
+| Node 22+ | `timeline_midnight` usa `--experimental-strip-types`; as outras usam `npx jest` / `npx vitest` |
+
+Consequencia pratica: um placar parcial pode enganar. O `qwen38-27b-iq4xs` "passou" so na
+`timeline_midnight` porque, na hora, era a unica que tinha como rodar — o repo ainda nao estava
+clonado. Antes de comparar placares, confirme que as quatro tiveram chance.
+
+Para levar a suite a uma maquina nova sem `gh` autenticado, o caminho que funcionou foi
+`git bundle create` na maquina que tem o repo e clonar do bundle no destino — nao move credencial.

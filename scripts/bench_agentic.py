@@ -388,6 +388,44 @@ class Workspace:
             return None
 
 
+def checar_orcamento(host: str, port: str, api_key: str, max_tokens: int) -> Optional[int]:
+    """TODO 7.2 — le n_ctx do servidor e valida o orcamento antes de rodar.
+
+    O runner pede `max_tokens` em TODA requisicao. Se o servidor subiu com n_ctx
+    pequeno, o pedido estoura assim que o prompt cresce e volta HTTP 400 no meio
+    da execucao. Checar aqui custa uma requisicao e evita perder a rodada.
+
+    Devolve n_ctx, -1 se o orcamento e inviavel, ou None se nao deu para
+    descobrir (nao bloqueia).
+    """
+    req = urllib.request.Request(f"http://{host}:{port}/props",
+                                 headers={"Authorization": f"Bearer {api_key}"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            props = json.loads(resp.read().decode("utf-8"))
+    except Exception as exc:
+        print(f"⚠️  nao consegui ler /props ({exc}); seguindo sem validar o orcamento.")
+        return None
+
+    n_ctx = (props.get("default_generation_settings", {}) or {}).get("n_ctx") or props.get("n_ctx")
+    if not n_ctx:
+        return None
+
+    # Se nem 2x max_tokens cabe, nao sobra espaco util para prompt+historico e a
+    # execucao nao tem como terminar.
+    if n_ctx < max_tokens * 2:
+        print(f"❌ ORCAMENTO INSUFICIENTE: n_ctx={n_ctx} com --max-tokens={max_tokens}.")
+        print(f"   Sobram {n_ctx - max_tokens} tokens para prompt+historico, e o prompt "
+              f"cresce a cada turno.")
+        print(f"   Suba o servidor com ctx >= {max_tokens * 4}, ou use "
+              f"--max-tokens {n_ctx // 4}.")
+        return -1
+
+    print(f"orcamento: n_ctx={n_ctx}, max_tokens={max_tokens}, "
+          f"sobram {n_ctx - max_tokens} para prompt+historico")
+    return n_ctx
+
+
 # ─── loop ───────────────────────────────────────────────────────────────────────
 
 def uma_tentativa(task: Task, url: str, modelo: str, api_key: str,
@@ -397,6 +435,15 @@ def uma_tentativa(task: Task, url: str, modelo: str, api_key: str,
     inicio = time.time()
     resultado: Dict[str, Any] = {
         "passou": False, "turnos": 0, "tokens": 0, "chamadas": {},
+        # Contexto por turno. O prompt cresce a cada volta e e ele que
+        # domina o tempo em modelo lento (medido: 1899 tokens gerados em
+        # 2150s). Sem registrar, nao da para saber se a tarefa cabe numa
+        # janela menor nem correlacionar tamanho de contexto com falha.
+        "ctx_por_turno": [], "ctx_pico": 0,
+        # TODO 7.1: falha de INFRA (rede, servidor fora, orcamento mal
+        # dimensionado) nao e falha do modelo. Sem separar, um veredito
+        # falso vira decisao.
+        "erro_infra": None,
         "tentou_editar_teste": False, "motivo": "", "verde_no_inicio": False,
         "placar_inicial": None, "placar_final": None,
     }
@@ -432,11 +479,37 @@ def uma_tentativa(task: Task, url: str, modelo: str, api_key: str,
             try:
                 with urllib.request.urlopen(req, timeout=900) as resp:
                     dados = json.loads(resp.read().decode("utf-8"))
+            except urllib.error.HTTPError as exc:
+                corpo_err = ""
+                try:
+                    corpo_err = exc.read().decode("utf-8", "replace")[:200]
+                except Exception:
+                    pass
+                # HTTP 400 aqui e quase sempre prompt+max_tokens > n_ctx. Mas a
+                # CAUSA muda com o turno em que acontece, e isso decide se conta
+                # como reprovacao ou nao (ver docstring do patch da fase 7).
+                turnos_feitos = resultado["turnos"]
+                if exc.code == 400 and turnos_feitos >= 5:
+                    resultado["motivo"] = (
+                        f"MODELO: HTTP 400 no turno {turnos_feitos} — encheu o contexto "
+                        f"({resultado['ctx_pico']} tokens) sem convergir. Dar mais ctx nao "
+                        f"resolve: o modelo enche o que estiver disponivel. {corpo_err}")
+                else:
+                    resultado["erro_infra"] = f"HTTP {exc.code}"
+                    resultado["motivo"] = (
+                        f"INFRA: HTTP {exc.code} no turno {turnos_feitos} — orcamento mal "
+                        f"dimensionado (prompt+max_tokens > n_ctx). {corpo_err}")
+                return resultado
             except (urllib.error.URLError, OSError, TimeoutError) as exc:
-                resultado["motivo"] = f"falha na requisição: {exc}"
+                resultado["erro_infra"] = type(exc).__name__
+                resultado["motivo"] = f"INFRA: falha na requisição: {exc}"
                 return resultado
 
-            resultado["tokens"] += (dados.get("usage") or {}).get("completion_tokens", 0)
+            _u = dados.get("usage") or {}
+            resultado["tokens"] += _u.get("completion_tokens", 0)
+            _pt = _u.get("prompt_tokens", 0)
+            resultado["ctx_por_turno"].append(_pt)
+            resultado["ctx_pico"] = max(resultado["ctx_pico"], _pt)
             msg = (dados.get("choices") or [{}])[0].get("message") or {}
             msgs.append(msg)
             tc = msg.get("tool_calls") or []
@@ -534,6 +607,9 @@ def main() -> int:
         print(f"    origem: {task.origem}")
     print()
 
+    if checar_orcamento(a.host, a.port, api_key, a.max_tokens) == -1:
+        return 2
+
     if a.repeats > 1 and a.temperature == 0.0:
         print("⚠️  repeats > 1 com --temperature 0: as execucoes sairao IDENTICAS.")
         print("    Para pass@k de verdade use --temperature 0.6 ou mais.\n")
@@ -556,7 +632,15 @@ def main() -> int:
                   f"{'   (progresso parcial)' if pf[0] > pi[0] and not r['passou'] else ''}")
         print(f"  tempo {r['tempo']}s · turnos {r['turnos']} · "
               f"tokens {r['tokens']} · chamadas {r['chamadas']}")
+        if r.get("ctx_por_turno"):
+            print(f"  ctx pico {r['ctx_pico']} · por turno {r['ctx_por_turno']}")
         print()
+
+    infra = [r for r in execucoes if r.get("erro_infra")]
+    if infra:
+        causas = ", ".join(sorted({r["erro_infra"] for r in infra}))
+        print(f"⚠️  {len(infra)}/{len(execucoes)} execucoes falharam por INFRA ({causas}).")
+        print("    Essas NAO sao reprovacao do modelo. Corrija o ambiente e repita.")
 
     if any(r["verde_no_inicio"] for r in execucoes):
         print("❌ FIXTURE INVÁLIDA: a suíte passa antes do modelo agir.")

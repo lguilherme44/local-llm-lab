@@ -189,3 +189,41 @@ A pena é que o perfil é o certo: `30B-A3B` são **3 B ativos**, a mesma classe
 caberia e rodaria com offload como o `moe` faz hoje. Enquanto isso, a única máquina da casa que o
 comporta é o ThinkPad de 30 GiB — sem GPU, onde um A3B roda a ~5,6 t/s (medido com o `moe`),
 suficiente para batch e insuficiente para loop de agente.
+
+---
+
+## Ornith 1.5 35B-A3B (`ornith15`) — teste INVALIDO, maquina fora de spec
+
+**Este nao e um veredito sobre o modelo.** Fica registrado para nao ser repetido do mesmo jeito.
+
+| | |
+|---|---|
+| arquivo | `Ornith-1.5-35B-A3B-AD-IQ4_XS-IQ3_S.gguf`, 16,40 GB |
+| arquitetura | `Qwen3_5MoeForConditionalGeneration` (`qwen3_5_moe`) — mesma familia do `moe` |
+| ativos | 3 B, igual ao `moe` |
+| `timeline_midnight` | **0/5**, esgotou os 14 turnos |
+| `product_unavailable` | abortado no meio, com `truncated = 1` |
+
+Parecia o candidato ideal: mesma arquitetura do `moe` (llama.cpp ja suporta, sem recompilar),
+mesmos 3 B ativos, 16,40 GB contra os 16,80 dele — substituicao drop-in. E os numeros publicados
+sao superiores ao Qwen3.6 35B nos quatro benchmarks (TerminalBench 67,8 vs 52,5; SWE-bench Verified
+79,0 vs 73,4; SWE-bench Pro 59,6 vs 49,5; MCP Atlas 70,2 vs 62,8).
+
+**O que invalidou:** o proprio anuncio diz que o 35B pede **24 GB de VRAM**, ou **12 GB** com os
+experts na RAM do sistema. Esta placa tem **8 GB** — abaixo do minimo declarado. E ha um segundo
+limite que o anuncio nao menciona: "experts na system RAM" pressupoe RAM sobrando, e aqui sao 15 GB
+totais com ~9,7 livres, enquanto `cpu_moe 30` empurra ~11 GB para la.
+
+O sintoma foi o servidor logar `n_tokens = 49151, truncated = 1`: o modelo encheu o ctx de 49.152
+e passou a ser cortado. **O `moe` roda com o mesmo ctx e nao estoura** — mas o `moe` tambem nao esta
+espremido. Um modelo truncado perde contexto e degrada de verdade, entao o 0/5 mede o
+estrangulamento, nao a capacidade.
+
+Contraste util com o `ling3-tiny`: aquele **cabia inteiro** na VRAM e mesmo assim fez 0/14 — la o
+veredito e do modelo. Aqui nao da para separar as duas coisas.
+
+**Para testar de verdade** seria preciso +4 GB de VRAM **e** mais RAM. Enquanto isso, a variante
+compativel com esta maquina e o **Ornith 1.5 9B** (`AD-Q5_K-Q4_K`, 5,9 GB, cabe inteiro nos 8 GB) —
+mas os numeros publicados dele perdem do `moe` nos quatro benchmarks (SWE-bench Verified 70,6 vs
+73,4; Pro 47,5 vs 49,5; TerminalBench 46,2 vs 52,5; MCP Atlas 54,2 vs 62,8). Seria troca de
+qualidade por velocidade e visao, nao upgrade.

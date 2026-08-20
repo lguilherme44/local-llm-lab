@@ -213,6 +213,35 @@ que interessa.
 - [ ] **3.10** Parar de agregar num `overall_score` único a média de notas binárias 10-ou-4.
       Reportar os eixos separados, ou pesos explícitos e declarados.
 
+## Fase 8 -- Re-medir o baseline do moe com o runner corrigido (PENDENTE)
+
+O 13/14 do moe foi medido em 03-04/08, **antes** dos dois fixes de 20/08
+(truncamento de tool result e abort em falha de infra). Todo o placar
+comparativo usa esse numero como regua, e ele pode estar penalizado: se alguma
+das falhas de entao foi tool result estourando o contexto, o moe e melhor do
+que a tabela diz.
+
+Tentado em 20/08 e **abortado por ambiente**, nao pelo modelo:
+
+- 1a tentativa (`cpu_moe 30`): o servidor morreu com `CUDA error: out of memory`
+  na execucao 2 de 14. A classificacao INFRA do fix novo impediu que o placar
+  saisse como "moe 0/14" -- primeira vez que o harness reagiu certo a isso.
+- 2a tentativa (`cpu_moe 34`, 1666 MiB de VRAM livre): abortada de proposito,
+  porque a causa raiz apareceu.
+
+**Causa raiz:** a maquina tem 15 GiB de RAM com ~10 disponiveis, e o `cpu_moe 30`
+quer ~12,5 GiB so para os experts. Com a RAM apertada o llama.cpp empurra mais
+para a placa, e ai a VRAM estoura. Rodando ao mesmo tempo: 5 containers docker
+(mysql:8.0, postgres:14-alpine, redis:7.0-alpine, localstack:3, painel-catalogo),
+Steam e Chrome.
+
+- [ ] **8.1** Repetir a suite com a maquina limpa: parar os containers, fechar
+      Steam e Chrome, conferir `free -h` acima de ~13 GiB disponiveis, e rodar
+      com `cpu_moe 30` (a config historica) para o numero ser comparavel.
+- [ ] **8.2** Se o placar mudar, atualizar a coluna `bugs reais` da tabela de
+      perfis e o README -- e revisar as comparacoes desta sessao, que usam 13/14.
+
+
 ## Fase 7 — O runner confunde falha de rede com falha do modelo (PRIORIDADE)
 
 Aconteceu **três vezes em um dia**, com três causas diferentes, e em todas o sintoma foi o mesmo:

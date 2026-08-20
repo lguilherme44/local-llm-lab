@@ -645,6 +645,7 @@ def main() -> int:
         print("    Para pass@k de verdade use --temperature 0.6 ou mais.\n")
 
     execucoes: List[Dict[str, Any]] = []
+    abortou_por_infra = False
     for i in range(1, a.repeats + 1):
         if a.repeats > 1:
             print(f"--- tentativa {i}/{a.repeats}")
@@ -669,11 +670,26 @@ def main() -> int:
             print(f"  ctx pico {r['ctx_pico']} · por turno {r['ctx_por_turno']}")
         print()
 
+        # TODO 7.1: falha de infra nao e reprovacao. Parar aqui evita gastar as
+        # repeticoes restantes contra um servidor morto e evita que o placar
+        # apareca como veredito do modelo.
+        if r.get("erro_infra"):
+            abortou_por_infra = True
+            break
+
     infra = [r for r in execucoes if r.get("erro_infra")]
     if infra:
         causas = ", ".join(sorted({r["erro_infra"] for r in infra}))
         print(f"⚠️  {len(infra)}/{len(execucoes)} execucoes falharam por INFRA ({causas}).")
         print("    Essas NAO sao reprovacao do modelo. Corrija o ambiente e repita.")
+
+    if abortou_por_infra:
+        print("❌ SUITE INTERROMPIDA: a ultima execucao falhou por INFRAESTRUTURA.")
+        print(f"   Rodaram {len(execucoes)} de {a.repeats}; as restantes foram puladas.")
+        print("   Este placar NAO vale como veredito do modelo.")
+        print("   Causa comum: OOM de VRAM -- o desktop e o navegador disputam a placa.")
+        print("   Suba o --n-cpu-moe (LLM_CPU_MOE) para liberar VRAM e repita.")
+        return 3
 
     if any(r["verde_no_inicio"] for r in execucoes):
         print("❌ FIXTURE INVÁLIDA: a suíte passa antes do modelo agir.")

@@ -137,7 +137,7 @@ máquina: o `tools` do `deepseek`, o `ngl` do `deepseek`, e o `ctx` do `quality`
 | arquitetura | `bailingmoe3` — MoE de 7,9 B com **1,3 B ativos**, 128 experts, 8 por token |
 | prefill | **4503 t/s** (18× o `moe`) |
 | geração | **174,1 t/s** (4,8× o `moe`) |
-| bugs reais | **0/14** |
+| bugs reais | **0/11 validas** (3 das 14 morreram pelo bug de tool result do runner) |
 
 O modelo mais rápido que já entrou nesta máquina, e o único a zerar a suíte. É o **único MoE que
 cabe inteiro na VRAM** (`cpu_moe=0`), o que fazia dele o candidato ideal no papel: esparso *e*
@@ -219,7 +219,13 @@ e passou a ser cortado. **O `moe` roda com o mesmo ctx e nao estoura** — mas o
 espremido. Um modelo truncado perde contexto e degrada de verdade, entao o 0/5 mede o
 estrangulamento, nao a capacidade.
 
-Contraste util com o `ling3-tiny`: aquele **cabia inteiro** na VRAM e mesmo assim fez 0/14 — la o
+**Segunda causa, descoberta em 20/08:** ele rodava com `cpu_moe 30`, ou seja ~11 GB de experts
+na RAM do sistema -- disputando com 5 containers docker (mysql, postgres, redis, localstack,
+painel-catalogo), Steam e Chrome, numa maquina de 15 GiB. O mesmo aperto que derrubou o `moe`
+por `CUDA out of memory` no dia seguinte ja estava presente aqui.
+
+Contraste util com o `ling3-tiny` e com o **Ornith 9B**: os dois rodaram com `cpu_moe 0`, tudo
+na VRAM e **zero bytes na RAM**, entao nem o docker nem o aperto de memoria os tocou -- neles o
 veredito e do modelo. Aqui nao da para separar as duas coisas.
 
 **Para testar de verdade** seria preciso +4 GB de VRAM **e** mais RAM. Enquanto isso, a variante

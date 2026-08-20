@@ -42,6 +42,28 @@ from typing import Any, Dict, List, Optional
 
 TASKS_DIR = Path(__file__).parent / "agentic_tasks"
 
+# Teto do retorno de UMA chamada de ferramenta, em caracteres. Medido em 20/08:
+# um list_files no node_modules symlinkado devolveu ~257 mil tokens e o servidor
+# respondeu HTTP 400 (n_ctx 49152), matando 3 de 14 execucoes. Sem limite aqui,
+# uma ferramenta sozinha estoura qualquer contexto -- com qualquer modelo.
+# 24000 chars ~= 8000 tokens, o que cabe folgado e ainda deixa a saida util.
+TOOL_RESULT_MAX_CHARS = 24000
+
+
+def truncar_saida_ferramenta(nome: str, saida: str) -> tuple:
+    """Corta o retorno de ferramenta no teto. Devolve (texto, quanto_cortou).
+
+    O aviso fica no proprio texto para o modelo saber que houve corte -- sem
+    isso ele acha que viu o diretorio inteiro e conclui em cima de dado parcial.
+    """
+    if len(saida) <= TOOL_RESULT_MAX_CHARS:
+        return saida, 0
+    cortados = len(saida) - TOOL_RESULT_MAX_CHARS
+    aviso = (f"\n\n[...saida de `{nome}` truncada pelo runner: {cortados} caracteres "
+             f"omitidos de {len(saida)} totais. Refine a chamada -- por exemplo, um "
+             f"caminho mais especifico -- em vez de repetir a mesma.]")
+    return saida[:TOOL_RESULT_MAX_CHARS] + aviso, cortados
+
 
 # ─── definição da tarefa ────────────────────────────────────────────────────────
 
@@ -444,6 +466,9 @@ def uma_tentativa(task: Task, url: str, modelo: str, api_key: str,
         # dimensionado) nao e falha do modelo. Sem separar, um veredito
         # falso vira decisao.
         "erro_infra": None,
+        # quantas saidas de ferramenta precisaram ser truncadas. Se for > 0,
+        # o modelo trabalhou com visao parcial -- relevante para o veredito.
+        "saidas_truncadas": 0,
         "tentou_editar_teste": False, "motivo": "", "verde_no_inicio": False,
         "placar_inicial": None, "placar_final": None,
     }
@@ -536,8 +561,13 @@ def uma_tentativa(task: Task, url: str, modelo: str, api_key: str,
                 if verbose:
                     print(f"  [{turno}] {time.time() - t0:5.1f}s  {fnome}"
                           f"{'  ← NEGADO' if saida.startswith('NEGADO:') else ''}")
+                saida_prompt, cortados = truncar_saida_ferramenta(fnome, saida)
+                if cortados:
+                    resultado["saidas_truncadas"] += 1
+                    print(f"  [{turno}] ⚠️  saida de {fnome} truncada: "
+                          f"{cortados} chars omitidos (teto {TOOL_RESULT_MAX_CHARS})")
                 msgs.append({"role": "tool", "tool_call_id": chamada.get("id", ""),
-                             "content": saida})
+                             "content": saida_prompt})
 
             if any((c.get("function") or {}).get("name") == "run_tests" for c in tc):
                 ok, _ = ws.rodar_testes()
@@ -632,6 +662,9 @@ def main() -> int:
                   f"{'   (progresso parcial)' if pf[0] > pi[0] and not r['passou'] else ''}")
         print(f"  tempo {r['tempo']}s · turnos {r['turnos']} · "
               f"tokens {r['tokens']} · chamadas {r['chamadas']}")
+        if r.get("saidas_truncadas"):
+            print(f"  ⚠️  {r['saidas_truncadas']} saida(s) de ferramenta truncada(s) — "
+                  f"o modelo decidiu com visao parcial")
         if r.get("ctx_por_turno"):
             print(f"  ctx pico {r['ctx_pico']} · por turno {r['ctx_por_turno']}")
         print()
